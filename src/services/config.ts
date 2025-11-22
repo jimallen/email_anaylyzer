@@ -5,6 +5,7 @@ import { join } from 'path';
 // Environment variable schema
 const EnvSchema = z.object({
   RESEND_API_KEY: z.string().min(1, 'RESEND_API_KEY is required'),
+  RESEND_FROM_EMAIL: z.string().email('RESEND_FROM_EMAIL must be a valid email').default('onboarding@resend.dev'),
   SPARKY_LLM_URL: z.string().url('SPARKY_LLM_URL must be a valid URL').default('http://localhost:8001/v1/chat/completions'),
   NODE_ENV: z.enum(['development', 'staging', 'production', 'test']).default('production'),
   PORT: z.coerce.number().positive('PORT must be a positive number').default(3000),
@@ -29,6 +30,7 @@ const WhitelistSchema = z.object({
 // Configuration type (inferred from schemas)
 export type Config = {
   resendApiKey: string;
+  resendFromEmail: string;
   sparkyLlmUrl: string;
   nodeEnv: 'development' | 'staging' | 'production' | 'test';
   port: number;
@@ -99,6 +101,7 @@ function loadConfig(): Config {
     // Return unified configuration object with camelCase keys
     return {
       resendApiKey: env.RESEND_API_KEY,
+      resendFromEmail: env.RESEND_FROM_EMAIL,
       sparkyLlmUrl: env.SPARKY_LLM_URL,
       nodeEnv: env.NODE_ENV,
       port: env.PORT,

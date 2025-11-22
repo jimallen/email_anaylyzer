@@ -37,12 +37,25 @@ export interface ImageContent {
 export type ContentItem = TextContent | ImageContent;
 
 /**
- * LLM API request message
+ * System message for LLM request
  */
-export interface LLMMessage {
+export interface SystemMessage {
+  role: 'system';
+  content: string;
+}
+
+/**
+ * User message for LLM request
+ */
+export interface UserMessage {
   role: 'user';
   content: ContentItem[];
 }
+
+/**
+ * LLM API request message (system or user)
+ */
+export type LLMMessage = SystemMessage | UserMessage;
 
 /**
  * LLM API request body
@@ -51,6 +64,7 @@ export interface LLMRequest {
   model: string;
   messages: LLMMessage[];
   max_tokens: number;
+  temperature?: number;
 }
 
 /**
@@ -60,6 +74,24 @@ export interface LLMConfig {
   model: string;
   maxTokens: number;
 }
+
+/**
+ * System prompt for email analysis
+ * Defines the structure and format for LLM feedback
+ */
+const SYSTEM_PROMPT = `You are an expert email marketing analyst specializing in retail e-commerce campaigns.
+Analyze the email screenshot provided and give detailed, actionable feedback following this structure:
+
+**LIFECYCLE CONTEXT:** Identify the campaign stage (Welcome, Abandoned Cart, Re-engagement, etc.) and relevant industry benchmarks.
+**SUBJECT (X/10):** Score and analyze the subject line effectiveness.
+**BODY (X/10):** Score and analyze the email body content and messaging.
+**CTA (X/10):** Score and analyze the call-to-action placement and effectiveness.
+**TECHNICAL/GDPR (X/10):** Score technical implementation and compliance.
+**CONVERSION IMPACT:** Estimate conversion rate improvements with specific metrics.
+**ACTIONS:** Provide numbered, specific recommendations with quantified impact.
+**TRANSFERABLE LESSONS:** Extract behavioral psychology principles that apply across campaigns.
+
+Base your analysis on visual elements, design choices, and overall email effectiveness.`;
 
 /**
  * LLM API response choice
@@ -107,18 +139,10 @@ export function formatLLMRequest(
   config: LLMConfig,
   logger?: FastifyBaseLogger
 ): LLMRequest {
-  // Build content array: text first (if exists), then all images
+  // Build content array: images first, then text prompt
   const content: ContentItem[] = [];
 
-  // Add text content if present
-  if (contentPackage.text && contentPackage.text.trim().length > 0) {
-    content.push({
-      type: 'text',
-      text: contentPackage.text,
-    });
-  }
-
-  // Add all image content
+  // Add all image content first (if any)
   for (const image of contentPackage.images) {
     content.push({
       type: 'image_url',
@@ -128,6 +152,28 @@ export function formatLLMRequest(
     });
   }
 
+  // Build user prompt based on content type
+  let userPrompt: string;
+
+  if (contentPackage.images.length > 0) {
+    // Has images - ask to analyze the screenshot
+    userPrompt = 'Analyze this email marketing campaign screenshot and provide detailed feedback following the structure specified in the system prompt.';
+
+    // If there's also text content, append it as context
+    if (contentPackage.text && contentPackage.text.trim().length > 0) {
+      userPrompt += `\n\nEmail text content:\n${contentPackage.text}`;
+    }
+  } else {
+    // Text-only - analyze the text
+    userPrompt = `Analyze this email marketing campaign text and provide detailed feedback following the structure specified in the system prompt.\n\nEmail content:\n${contentPackage.text}`;
+  }
+
+  // Add text prompt
+  content.push({
+    type: 'text',
+    text: userPrompt,
+  });
+
   // Log request metadata (without actual content/base64)
   logger?.info(
     {
@@ -135,20 +181,34 @@ export function formatLLMRequest(
       contentItems: content.length,
       hasText: contentPackage.text.trim().length > 0,
       imageCount: contentPackage.images.length,
+      maxTokens: config.maxTokens,
+      temperature: 0.7,
+      messageCount: 2, // system + user
+      systemPromptLength: SYSTEM_PROMPT.length,
+      userPromptLength: userPrompt.length,
+      contentBreakdown: content.map(c => ({
+        type: c.type,
+        hasData: c.type === 'image_url' ? 'yes' : 'yes'
+      }))
     },
     'LLM request formatted'
   );
 
-  // Return formatted request
+  // Return formatted request with system prompt
   return {
     model: config.model,
     messages: [
+      {
+        role: 'system',
+        content: SYSTEM_PROMPT,
+      },
       {
         role: 'user',
         content,
       },
     ],
     max_tokens: config.maxTokens,
+    temperature: 0.7,
   };
 }
 
@@ -179,11 +239,25 @@ export async function callLLMAPI(
   // Track timing
   const startTime = Date.now();
 
+  logger?.info({
+    url: apiUrl,
+    model: request.model,
+    maxTokens: request.max_tokens,
+    timeoutMs,
+    messageCount: request.messages.length
+  }, 'Starting LLM API call');
+
   // Create AbortController for timeout
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    logger?.info({
+      url: apiUrl,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }, 'Sending HTTP request to LLM');
+
     // Make fetch request with timeout signal
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -193,6 +267,12 @@ export async function callLLMAPI(
       body: JSON.stringify(request),
       signal: controller.signal,
     });
+
+    logger?.info({
+      statusCode: response.status,
+      statusText: response.statusText,
+      duration: Date.now() - startTime
+    }, 'Received HTTP response from LLM');
 
     // Clear timeout on successful response
     clearTimeout(timeoutId);
