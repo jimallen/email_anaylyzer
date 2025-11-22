@@ -1,0 +1,269 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>4.2</storyId>
+    <title>Implement LLM API Client with Timeout Handling</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-4-story-4.2.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>team member</asA>
+    <iWant>the service to call the Sparky LLM API for analysis</iWant>
+    <soThat>I receive AI-generated feedback on my email draft</soThat>
+    <tasks>
+- Add function to `src/services/llm-client.ts`
+- Export function: `callLLMAPI(request: LLMRequest, timeout: number): Promise<LLMResponse>`
+- Use native fetch (Node 25 built-in) for HTTP POST
+- Implement AbortController pattern for 25-second timeout
+- Track timing: start timestamp, duration calculation, log results
+- Error handling: catch and categorize fetch errors, timeout errors, HTTP errors
+- Load timeout from config (25000ms default)
+- Load API URL from environment variable (SPARKY_LLM_URL)
+- Return OpenAI-compatible LLMResponse
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** an LLM request is formatted
+**When** calling the Sparky API
+**Then** HTTP POST request is made to configured endpoint (SPARKY_LLM_URL)
+
+**And** request uses native fetch with Method POST, Headers Content-Type application/json, Body JSON.stringify(llmRequest), No authentication
+
+**And** timeout is enforced at 25 seconds using AbortController pattern
+
+**And** successful API call (HTTP 200) returns response body as JSON
+
+**And** API call timing is tracked and logged with duration and statusCode
+
+**And** timeout (>25s) triggers abort, wraps error, logs warning
+
+**And** non-200 status logs response details and throws error
+
+**And** network errors are caught, logged, and re-thrown
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Integration Points - Sparky LLM API</section>
+        <snippet>
+Sparky LLM API (Outbound):
+- Endpoint: https://sparky.tail468b81.ts.net/v1/chat/completions
+- Method: POST
+- Format: OpenAI-compatible chat completion
+- Authentication: None (internal network)
+- Timeout: 25 seconds (AbortController)
+- Payload: Multimodal (text + base64 images)
+- Response: JSON with choices[0].message.content
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Communication Patterns - HTTP Timeouts</section>
+        <snippet>
+HTTP Timeouts:
+- LLM API: 25 seconds (AbortController with setTimeout)
+- Resend API: 10 seconds
+- Image download: 10 seconds
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Core Technologies - Key Libraries</section>
+        <snippet>
+Built-in Node.js Features (Zero Dependencies):
+- Native fetch - HTTP client for Sparky LLM + Resend APIs
+- Native Buffer - Base64 image encoding
+- fs.watch - Config file hot-reload
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 4.2 Technical Notes</section>
+        <snippet>
+Use native fetch (Node 25 built-in)
+AbortController pattern for timeout
+Track timing: const start = Date.now(); const duration = Date.now() - start;
+Error handling: catch fetch errors, timeout errors, HTTP errors separately
+Load timeout from config (25000ms default)
+Load API URL from environment variable (SPARKY_LLM_URL)
+        </snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <expected>
+        <file>
+          <path>src/services/llm-client.ts</path>
+          <kind>service</kind>
+          <symbol>callLLMAPI</symbol>
+          <reason>New function to implement for calling Sparky LLM API. Extends the file created in Story 4.1</reason>
+        </file>
+        <file>
+          <path>src/services/llm-client.ts</path>
+          <kind>service</kind>
+          <symbol>formatLLMRequest</symbol>
+          <reason>Existing function from Story 4.1 that prepares the request object passed to callLLMAPI</reason>
+        </file>
+        <file>
+          <path>src/services/config.ts</path>
+          <kind>service</kind>
+          <symbol>Config object/module</symbol>
+          <reason>Source of SPARKY_LLM_URL and llm_timeout_ms configuration values (from Epic 1)</reason>
+        </file>
+      </expected>
+    </code>
+
+    <dependencies>
+      <node>
+        <package>typescript</package>
+        <version>latest</version>
+        <usage>Type safety for fetch API, AbortController, and response handling</usage>
+      </node>
+      <builtin>
+        <feature>fetch (Node 25)</feature>
+        <usage>Native HTTP client for POST requests to Sparky LLM API</usage>
+      </builtin>
+      <builtin>
+        <feature>AbortController</feature>
+        <usage>Timeout enforcement for fetch requests (25-second limit)</usage>
+      </builtin>
+      <builtin>
+        <feature>setTimeout / clearTimeout</feature>
+        <usage>Timer management for AbortController timeout</usage>
+      </builtin>
+      <builtin>
+        <feature>JSON.stringify</feature>
+        <usage>Serialize LLMRequest object to JSON body</usage>
+      </builtin>
+      <builtin>
+        <feature>Date.now()</feature>
+        <usage>Track API call timing and duration</usage>
+      </builtin>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Use Node 25 built-in fetch (NOT axios, node-fetch, or other libraries)
+- Timeout MUST be 25 seconds (configurable via settings.json llm_timeout_ms)
+- AbortController pattern required for timeout enforcement
+- No authentication headers (internal network trust model)
+- Track and log timing for all API calls (success and failure)
+- Categorize errors: timeout vs network vs HTTP status
+- Never log actual LLM request/response content - only metadata
+- Load SPARKY_LLM_URL from environment variable
+- Response must be parsed as JSON (await response.json())
+- Clear timeout after successful fetch to prevent memory leaks
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>callLLMAPI</name>
+      <kind>Function signature</kind>
+      <signature>
+```typescript
+export async function callLLMAPI(
+  request: LLMRequest,
+  timeout: number
+): Promise<LLMResponse>
+```
+      </signature>
+      <path>src/services/llm-client.ts</path>
+    </interface>
+    <interface>
+      <name>LLMResponse</name>
+      <kind>TypeScript interface</kind>
+      <signature>
+```typescript
+interface LLMResponse {
+  choices: Array<{
+    message: {
+      content: string;
+    };
+  }>;
+}
+```
+      </signature>
+      <path>src/services/llm-client.ts</path>
+    </interface>
+    <interface>
+      <name>AbortController pattern</name>
+      <kind>Code pattern</kind>
+      <signature>
+```typescript
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+try {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+    signal: controller.signal
+  });
+  clearTimeout(timeoutId);
+  return await response.json();
+} catch (error) {
+  clearTimeout(timeoutId);
+  // Handle error
+}
+```
+      </signature>
+      <path>src/services/llm-client.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest testing framework. Test files co-located with source (*.test.ts). Mock fetch API for unit tests. Test AbortController timeout behavior. Test error scenarios (network, HTTP, timeout). Use vitest's expect assertions.
+    </standards>
+    <locations>
+src/services/llm-client.test.ts
+    </locations>
+    <ideas>
+**Test Case 1: Successful API call**
+- Given: Mock fetch returns 200 with valid LLMResponse JSON
+- When: callLLMAPI is called
+- Then: Returns parsed LLMResponse, logs duration, clears timeout
+
+**Test Case 2: Timeout after 25 seconds**
+- Given: Mock fetch delays >25 seconds
+- When: callLLMAPI is called with 25000ms timeout
+- Then: AbortController aborts, timeout error caught, duration ~25000ms logged
+
+**Test Case 3: HTTP error (non-200 status)**
+- Given: Mock fetch returns 500 status
+- When: callLLMAPI is called
+- Then: Error thrown, status and body logged, timeout cleared
+
+**Test Case 4: Network error**
+- Given: Mock fetch throws network error (DNS failure, connection refused)
+- When: callLLMAPI is called
+- Then: Error caught, logged with details, re-thrown, timeout cleared
+
+**Test Case 5: Load configuration**
+- Given: Config has SPARKY_LLM_URL and llm_timeout_ms
+- When: callLLMAPI is called
+- Then: Uses configured URL and timeout value
+
+**Test Case 6: JSON parsing error**
+- Given: API returns 200 but invalid JSON body
+- When: callLLMAPI is called
+- Then: JSON parse error caught and handled
+
+**Test Case 7: Timing accuracy**
+- Given: Mock fetch responds in 3245ms
+- When: callLLMAPI is called
+- Then: Logged duration is approximately 3245ms (+/- 50ms tolerance)
+    </ideas>
+  </tests>
+</story-context>

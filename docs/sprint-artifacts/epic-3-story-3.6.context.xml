@@ -1,0 +1,219 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>3.6</storyId>
+    <title>Implement Error Handling for Missing/Invalid Content</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/home/jima/Code/email_anaylyzer/docs/sprint-artifacts/epic-3-story-3.6.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>team member</asA>
+    <iWant>clear error messages when my email has missing or invalid content</iWant>
+    <soThat>I understand what went wrong and can fix it</soThat>
+    <tasks>
+- Create src/lib/errors.ts with ContentProcessingError class
+- Define ProcessingError interface with code, message, details fields
+- Implement error handling for four scenarios: NO_CONTENT, DOWNLOAD_FAILED, INVALID_FORMAT, SIZE_EXCEEDED
+- Create validation in email-processor service
+- Throw ContentProcessingError for each error scenario
+- Webhook handler will catch and handle errors (Epic 5)
+- Log errors with full context for debugging
+- User-friendly error messages (non-technical language)
+- Separate technical details for logging from user-facing messages
+- Ensure processing errors don't crash the service
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** content processing encounters errors
+**When** handling different error conditions
+**Then** appropriate errors are created for each scenario:
+
+**Error 1: No Content (Empty Email)**
+- Both text and images are empty/missing
+- Error message: "No content found to analyze. Please include email text or screenshot."
+- Error logged with context
+
+**Error 2: All Images Failed to Download**
+- Text is empty, images were detected but all downloads failed
+- Error message: "Unable to download screenshots. Please check file sizes and try again."
+- Error logged with download failure details
+
+**Error 3: All Images Invalid Format**
+- Text is empty, images downloaded but all were unsupported formats
+- Error message: "Unsupported image formats detected. Please use PNG or JPEG screenshots."
+- Error logged with detected MIME types
+
+**Error 4: All Images Too Large**
+- Images exceed size limit
+- Error message: "Screenshots are too large (max 10MB). Please reduce file size and try again."
+- Error logged with actual sizes
+
+**And** errors are structured for use in Epic 5 (email response generation):
+```typescript
+interface ProcessingError {
+  code: 'NO_CONTENT' | 'DOWNLOAD_FAILED' | 'INVALID_FORMAT' | 'SIZE_EXCEEDED';
+  message: string; // User-friendly message
+  details: Record&lt;string, unknown&gt;; // Technical details for logging
+}
+```
+
+**And** errors are logged with full context for debugging:
+```json
+{
+  "level": "error",
+  "msg": "Content processing failed",
+  "errorCode": "NO_CONTENT",
+  "from": "user@company.com",
+  "hasTextAttempt": false,
+  "imageAttempts": 0
+}
+```
+
+**And** processing errors do NOT crash the service - errors are returned to webhook handler
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Error Handling (FR26-32)</section>
+        <snippet>System returns user-friendly error messages for content processing failures. Errors include specific guidance on how to resolve the issue (file size, format, content requirements).</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Error Handling</title>
+        <section>Error Scenarios and Recovery</section>
+        <snippet>Content processing errors are caught and converted to user-friendly messages. Technical details logged separately for debugging. Errors propagate to webhook handler for email response generation.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Logging Requirements</title>
+        <section>Error Logging (FR33-39)</section>
+        <snippet>Errors logged with context: error code, sender email, content status, attempt counts. Full technical details available for debugging while user messages remain clear and actionable.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Epic 3: Content Extraction &amp; Processing</section>
+        <snippet>Story 3.6: Implement Error Handling for Missing/Invalid Content - provides structured error framework for content processing failures with user-friendly messaging.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/lib/errors.ts</path>
+        <kind>library</kind>
+        <symbol>ContentProcessingError</symbol>
+        <lines>TBD</lines>
+        <reason>New custom error class for content processing failures</reason>
+      </artifact>
+      <artifact>
+        <path>src/services/email-processor.ts</path>
+        <kind>service</kind>
+        <symbol>categorizeContent</symbol>
+        <lines>TBD</lines>
+        <reason>Integration point - will throw ContentProcessingError for empty content</reason>
+      </artifact>
+      <artifact>
+        <path>src/routes/webhook.ts</path>
+        <kind>route</kind>
+        <symbol>webhookHandler</symbol>
+        <lines>TBD</lines>
+        <reason>Webhook handler will catch ContentProcessingError (implemented in Epic 5)</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <typescript>
+        <package name="@types/node" version="latest">Type definitions for Node.js</package>
+      </typescript>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Define four error codes: NO_CONTENT, DOWNLOAD_FAILED, INVALID_FORMAT, SIZE_EXCEEDED
+- User messages must be non-technical and actionable (no stack traces, API details)
+- Technical details stored separately in ProcessingError.details for logging
+- Errors must be catchable - thrown as ContentProcessingError instances
+- Webhook handler must catch errors (implementation in Epic 5)
+- Errors must not crash the service - async error handling
+- Log full context: sender, error code, content status, attempt counts
+- Error handling must be integrated into email-processor service validation
+- Maintain TypeScript strict mode
+- Co-locate tests with source (errors.test.ts)
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>ContentProcessingError</name>
+      <kind>Custom Error Class</kind>
+      <signature>
+export class ContentProcessingError extends Error {
+  constructor(
+    public code: string,
+    public userMessage: string,
+    public details: Record&lt;string, unknown&gt;
+  ) {
+    super(userMessage);
+    this.name = 'ContentProcessingError';
+  }
+}
+      </signature>
+      <path>src/lib/errors.ts</path>
+    </interface>
+    <interface>
+      <name>ProcessingError</name>
+      <kind>TypeScript Interface</kind>
+      <signature>
+interface ProcessingError {
+  code: 'NO_CONTENT' | 'DOWNLOAD_FAILED' | 'INVALID_FORMAT' | 'SIZE_EXCEEDED';
+  message: string;
+  details: Record&lt;string, unknown&gt;;
+}
+      </signature>
+      <path>src/lib/errors.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest for testing. Co-locate tests (errors.test.ts, email-processor.test.ts). Test error creation with correct code and message. Test integration points where errors are thrown. Mock logger to verify error context logging. Test that errors contain both user-friendly and technical details.
+    </standards>
+    <locations>
+src/**/*.test.ts (co-located with source files)
+    </locations>
+    <ideas>
+      <test acceptanceCriteriaId="AC1">
+        <description>Test NO_CONTENT error for empty email</description>
+        <approach>Call categorizeContent with empty text and images, verify ContentProcessingError thrown with code='NO_CONTENT'</approach>
+      </test>
+      <test acceptanceCriteriaId="AC2">
+        <description>Test DOWNLOAD_FAILED error handling</description>
+        <approach>Simulate scenario where all images fail to download, verify error has correct code and user-friendly message</approach>
+      </test>
+      <test acceptanceCriteriaId="AC3">
+        <description>Test INVALID_FORMAT error handling</description>
+        <approach>Simulate scenario where all images have unsupported format, verify error includes MIME types in details</approach>
+      </test>
+      <test acceptanceCriteriaId="AC4">
+        <description>Test SIZE_EXCEEDED error handling</description>
+        <approach>Simulate scenario where images exceed size limit, verify error includes actual sizes in details</approach>
+      </test>
+      <test acceptanceCriteriaId="AC5">
+        <description>Test error logging format and context</description>
+        <approach>Mock logger, throw error, verify log includes error code, sender, content status, and technical details</approach>
+      </test>
+      <test acceptanceCriteriaId="AC6">
+        <description>Test error message is user-friendly (non-technical)</description>
+        <approach>Verify error messages don't include stack traces, API details, or technical jargon</approach>
+      </test>
+      <test acceptanceCriteriaId="AC7">
+        <description>Test error doesn't crash service</description>
+        <approach>Throw error in processing pipeline, verify webhook handler can catch and handle gracefully</approach>
+      </test>
+    </ideas>
+  </tests>
+</story-context>

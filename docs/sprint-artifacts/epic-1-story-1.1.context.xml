@@ -1,0 +1,170 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>1.1</storyId>
+    <title>Initialize Fastify TypeScript Project</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-1-story-1.1.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer</asA>
+    <iWant>a Fastify TypeScript project initialized with proper tooling</iWant>
+    <soThat>I have a solid foundation with build tools, linting, and hot-reload for development</soThat>
+    <tasks>
+      - Install Fastify CLI and generate project (AC: 1, 2)
+      - Switch to pnpm and install dependencies (AC: 2, 3)
+      - Configure TypeScript strict mode (AC: 1)
+      - Verify project setup (AC: 4, 5)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">
+      <given>Node.js 25.1.0 is installed on the sparky server</given>
+      <when>I run the Fastify CLI generator command</when>
+      <then>A complete TypeScript project structure is created with: Fastify framework, TypeScript compilation (strict mode), ESLint + Prettier, hot-reload, build scripts</then>
+    </criterion>
+    <criterion id="AC2">
+      <condition>Project uses pnpm as package manager (not npm)</condition>
+    </criterion>
+    <criterion id="AC3">
+      <condition>Additional dependencies installed: zod (schema validation), dotenv (environment variables), vitest and @types/node (testing)</condition>
+    </criterion>
+    <criterion id="AC4">
+      <condition>Project builds successfully (`pnpm build` completes without errors)</condition>
+    </criterion>
+    <criterion id="AC5">
+      <condition>Development server starts successfully (`pnpm dev` runs on port 3000)</condition>
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Project Initialization</section>
+        <snippet>First implementation story must install Fastify CLI globally, generate project with TypeScript, and install dependencies. Starter template provides Fastify framework, TypeScript, ESLint + Prettier, hot reload, and plugin architecture.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Decision Summary</section>
+        <snippet>Node.js 25.1.0 runtime, pnpm package manager (fast, efficient, strict dependency resolution), Fastify framework (latest version, fast and low-overhead), TypeScript (latest, type safety for API integrations), vitest testing framework.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Project Structure</section>
+        <snippet>Expected structure: src/app.ts (Fastify app setup), src/server.ts (server entry point), routes/ (route plugins), plugins/ (auth, error-handler), services/ (business logic), lib/ (schemas, types), __tests__/ (test files).</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Implementation Patterns - Naming Patterns</section>
+        <snippet>Files & directories use kebab-case (email-processor.ts, llm-client.ts). Code: PascalCase for types/interfaces, camelCase for variables/functions, SCREAMING_SNAKE_CASE for constants.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>TypeScript Patterns</section>
+        <snippet>Strict mode enabled in tsconfig.json: strict: true, noUncheckedIndexedAccess: true, noImplicitReturns: true. Use zod for runtime validation.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 1.1 Technical Notes</section>
+        <snippet>Run: npm install --global fastify-cli (if not already installed). Run: fastify generate email-analyzer --lang=ts. Switch to pnpm: rm package-lock.json && pnpm install. Add dependencies: pnpm add zod dotenv && pnpm add -D vitest @types/node. Update tsconfig.json strict mode settings. File naming convention: kebab-case for all files and directories.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <!-- No existing code - this is the first story (greenfield project initialization) -->
+    </code>
+    <dependencies>
+      <!-- Will be created after project initialization -->
+      <note>This story CREATES the initial package.json. Dependencies to be installed:</note>
+      <runtime>
+        <dependency name="fastify" version="latest" />
+        <dependency name="zod" version="latest" />
+        <dependency name="dotenv" version="latest" />
+      </runtime>
+      <devDependencies>
+        <dependency name="vitest" version="latest" />
+        <dependency name="@types/node" version="latest" />
+        <dependency name="typescript" version="latest" purpose="included in Fastify starter" />
+        <dependency name="eslint" version="latest" purpose="included in Fastify starter" />
+        <dependency name="prettier" version="latest" purpose="included in Fastify starter" />
+      </devDependencies>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="runtime">
+      <rule>Must use Node.js 25.1.0 (current on sparky server)</rule>
+    </constraint>
+    <constraint type="package-manager">
+      <rule>Must use pnpm (not npm) for package management</rule>
+      <rationale>Fast, efficient, strict dependency resolution per architecture decisions</rationale>
+    </constraint>
+    <constraint type="naming">
+      <rule>All files and directories must use kebab-case naming</rule>
+      <examples>email-processor.ts, llm-client.ts, webhook-handler.ts</examples>
+    </constraint>
+    <constraint type="typescript">
+      <rule>Enable strict mode with noUncheckedIndexedAccess and noImplicitReturns</rule>
+      <config>
+        {
+          "compilerOptions": {
+            "strict": true,
+            "noUncheckedIndexedAccess": true,
+            "noImplicitReturns": true
+          }
+        }
+      </config>
+    </constraint>
+    <constraint type="framework">
+      <rule>Use Fastify plugin architecture for modular design</rule>
+      <rationale>Enables separation of concerns, routes and plugins as independent modules</rationale>
+    </constraint>
+    <constraint type="testing">
+      <rule>Use vitest as testing framework</rule>
+      <rationale>Fast, modern, excellent TypeScript support per architecture decisions</rationale>
+    </constraint>
+  </constraints>
+
+  <interfaces>
+    <!-- No existing interfaces - this is project initialization -->
+    <note>This story establishes the project foundation. Future stories will define API endpoints and service interfaces.</note>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing framework: vitest with @types/node. Tests will be co-located with source files using *.test.ts naming pattern (e.g., whitelist.test.ts alongside whitelist.ts). Structure: describe() blocks for modules, nested describe() for functions, it() for specific cases. Use expect() assertions from vitest. For this initialization story, primary validation is successful build and dev server startup.
+    </standards>
+    <locations>
+      - src/**/*.test.ts (co-located with source files)
+      - Tests created in subsequent stories will follow this pattern
+    </locations>
+    <ideas>
+      <idea acRef="AC4">
+        <test>Verify TypeScript compilation completes without errors</test>
+        <approach>Run `pnpm build` and check exit code is 0</approach>
+      </idea>
+      <idea acRef="AC5">
+        <test>Verify development server starts and listens on port 3000</test>
+        <approach>Run `pnpm dev` in background and check server responds to requests</approach>
+      </idea>
+      <idea acRef="AC1">
+        <test>Verify starter template provides expected files</test>
+        <approach>Check existence of src/app.ts, src/server.ts, routes/, plugins/ directories</approach>
+      </idea>
+      <idea acRef="AC3">
+        <test>Verify required dependencies are installed</test>
+        <approach>Check package.json contains zod, dotenv, vitest, @types/node</approach>
+      </idea>
+    </ideas>
+  </tests>
+</story-context>

@@ -1,0 +1,215 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>1.4</storyId>
+    <title>Set Up PM2 Process Management</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/home/jima/Code/email_anaylyzer/docs/sprint-artifacts/epic-1-story-1.4.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system operator</asA>
+    <iWant>PM2 process manager configured for auto-restart and log rotation</iWant>
+    <soThat>the service maintains >95% uptime and logs are managed automatically</soThat>
+    <tasks>
+- Install PM2 globally if needed: `npm install -g pm2`
+- Create ecosystem.config.js in project root with PM2 configuration
+- Configure app name: email-analyzer
+- Configure script path: ./dist/server.js
+- Set instances: 1 (single process)
+- Enable auto-restart
+- Set max memory restart: 500M
+- Set environment variables: NODE_ENV=production, PORT=3000
+- Configure log files: ./logs/error.log, ./logs/output.log
+- Set log rotation: daily, 30-day retention
+- Enable merge logs: true
+- Create logs/ directory with proper permissions (755)
+- Implement graceful shutdown in src/server.ts (SIGTERM/SIGINT handlers)
+- Configure Fastify close() with 30s timeout for in-flight requests
+- Test PM2 start: `pm2 start ecosystem.config.js`
+- Test PM2 reload: `pm2 reload email-analyzer`
+- Verify health check works after PM2 start
+</tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** PM2 is installed globally on sparky server
+**When** I deploy the service
+**Then** PM2 configuration file `ecosystem.config.js` exists with:
+- App name: `email-analyzer`
+- Script: `./dist/server.js`
+- Instances: 1 (single process)
+- Auto-restart: enabled
+- Max memory restart: 500M
+- Environment variables: NODE_ENV=production, PORT=3000
+- Log files: `./logs/error.log`, `./logs/output.log`
+- Log rotation: daily, 30-day retention
+- Merge logs: true
+
+**And** logs directory is created with proper permissions (755)
+
+**And** PM2 can start the service: `pm2 start ecosystem.config.js`
+
+**And** PM2 can reload the service: `pm2 reload email-analyzer`
+
+**And** service automatically restarts on crash
+
+**And** graceful shutdown is implemented (SIGTERM/SIGINT handlers)
+
+**And** in-flight requests complete before shutdown (max 30 second wait)
+</acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <!-- Relevant Documentation Artifacts -->
+      <artifact>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Service Operations (FR47-49)</section>
+        <snippet>FR47: System maintains >95% uptime for reliable team usage. FR49: System gracefully shuts down and rejects new requests during maintenance. NFR-R3: Service automatically restarts on crash with process supervision.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Technology Stack - Process Manager</section>
+        <snippet>PM2 - Auto-restart, zero-downtime deploys, log rotation. Used for maintaining >95% uptime (FR47, NFR-R3). Process manager configured in ecosystem.config.js.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Deployment Architecture - PM2 Configuration</section>
+        <snippet>PM2 Configuration (ecosystem.config.js): name: email-analyzer, script: ./dist/server.js, instances: 1, autorestart: true, max_memory_restart: 500M, env: NODE_ENV=production PORT=3000, log files in ./logs/, log rotation daily with 30-day retention.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Deployment Architecture - Zero-Downtime</section>
+        <snippet>Zero-Downtime Deployment (NFR-M8): pm2 reload gracefully shuts down old process. New process starts before old terminates. In-flight requests complete before shutdown (30s max). Implements graceful shutdown pattern.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Lifecycle Patterns - Graceful Shutdown</section>
+        <snippet>Graceful Shutdown (PM2): On SIGTERM/SIGINT → Stop accepting new requests, Wait for in-flight requests (max 30s), Close Fastify server, Exit process. Ensures clean shutdown without dropping requests.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 1.4 Details</section>
+        <snippet>Prerequisites: Story 1.1 (project built), Story 1.3 (health endpoint for verification). Technical: Create ecosystem.config.js, implement graceful shutdown in src/server.ts with SIGTERM/SIGINT handlers, configure Fastify close() with 30s timeout.</snippet>
+      </artifact>
+    </docs>
+    <code>
+      <!-- Existing Code and Interfaces -->
+      <!-- Note: This story creates PM2 configuration (ecosystem.config.js) and adds graceful shutdown to src/server.ts -->
+      <!-- Requires Story 1.1 (Fastify project) and 1.3 (health endpoint) to be completed first -->
+      <artifact>
+        <path>src/server.ts</path>
+        <kind>server entry point</kind>
+        <symbol>server startup</symbol>
+        <lines>TBD - needs graceful shutdown implementation</lines>
+        <reason>This story adds SIGTERM/SIGINT handlers to this file for graceful shutdown. Fastify close() method will be called to drain in-flight requests with 30s timeout.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <node>
+        <pm2>global install - Process manager for auto-restart and log rotation</pm2>
+        <fastify>latest - Provides close() method for graceful shutdown</fastify>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- MUST install PM2 globally on server (not as project dependency)
+- MUST create ecosystem.config.js in project root (NOT in src/)
+- MUST configure single instance (instances: 1) for MVP
+- MUST enable auto-restart (autorestart: true)
+- MUST set max memory limit to 500M (max_memory_restart: '500M')
+- MUST configure environment variables: NODE_ENV=production, PORT=3000
+- MUST create logs/ directory with 755 permissions
+- MUST configure log rotation: daily, 30-day retention
+- MUST implement graceful shutdown handlers for SIGTERM and SIGINT
+- MUST use Fastify's close() method to drain in-flight requests
+- MUST allow max 30 seconds for in-flight requests to complete
+- MUST test PM2 start and reload commands
+- MUST verify health check endpoint works after PM2 start
+- MUST follow NFR-R3 (auto-restart), NFR-M8 (zero-downtime), FR47 (>95% uptime)
+</constraints>
+
+  <interfaces>
+- PM2 Ecosystem Config Structure (ecosystem.config.js):
+  ```javascript
+  module.exports = {
+    apps: [{
+      name: 'email-analyzer',
+      script: './dist/server.js',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '500M',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3000
+      },
+      error_file: './logs/error.log',
+      out_file: './logs/output.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true
+    }]
+  };
+  ```
+
+- Graceful Shutdown Pattern (src/server.ts):
+  ```typescript
+  const gracefulShutdown = async (signal: string) => {
+    console.log(`Received ${signal}, closing server gracefully...`);
+    await fastify.close(); // Drains in-flight requests (30s timeout)
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  ```
+
+- Fastify Close Configuration:
+  - Fastify close() method has built-in grace period
+  - Configure closeTimeout in Fastify options if needed:
+    ```typescript
+    const fastify = Fastify({
+      closeTimeout: 30000 // 30 seconds
+    });
+    ```
+
+- PM2 Commands:
+  - Start: `pm2 start ecosystem.config.js`
+  - Reload: `pm2 reload email-analyzer`
+  - Stop: `pm2 stop email-analyzer`
+  - Monitor: `pm2 monit`
+  - Logs: `pm2 logs email-analyzer`
+</interfaces>
+
+  <tests>
+    <standards>Test PM2 configuration and graceful shutdown behavior. Manual testing required for PM2 start/reload/stop commands. Integration testing for graceful shutdown can simulate SIGTERM signal. Verify logs directory creation and permissions. Test that health check endpoint remains accessible after PM2 start.</standards>
+    <locations>
+- Manual testing: PM2 start, reload, stop commands
+- Integration testing: Graceful shutdown simulation (send SIGTERM to process)
+- Verification: Health check endpoint after PM2 start
+</locations>
+    <ideas>
+- Test: PM2 start command successfully starts the service
+- Test: PM2 reload command gracefully restarts without downtime
+- Test: Service automatically restarts after crash (kill process, verify restart)
+- Test: Graceful shutdown handles SIGTERM signal (simulated)
+- Test: Graceful shutdown handles SIGINT signal (simulated)
+- Test: In-flight requests complete before shutdown (create long-running request, send SIGTERM, verify completion)
+- Test: Health check endpoint responds after PM2 start
+- Test: Logs directory exists with 755 permissions
+- Test: PM2 logs error output to ./logs/error.log
+- Test: PM2 logs standard output to ./logs/output.log
+- Test: ecosystem.config.js contains all required configuration fields
+- Test: Service respects max memory limit (simulate high memory usage, verify restart)
+</ideas>
+  </tests>
+</story-context>

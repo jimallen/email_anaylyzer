@@ -1,0 +1,255 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>4.1</storyId>
+    <title>Build OpenAI-Compatible Request Formatter</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-4-story-4.1.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer</asA>
+    <iWant>content formatted for OpenAI-compatible API requests</iWant>
+    <soThat>the Sparky LLM can analyze both text and images in a single request</soThat>
+    <tasks>
+- Create `src/services/llm-client.ts`
+- Export function: `formatLLMRequest(package: ContentPackage, config: LLMConfig): LLMRequest`
+- Define TypeScript interfaces for LLMRequest, TextContent, ImageContent
+- Build content array: text first (if exists), then all images
+- Load config values from settings.json (model name, max_tokens)
+- Don't log actual content - only metadata (count, types)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** a content package from Epic 3 (text and/or images)
+**When** formatting for LLM API request
+**Then** the request body follows OpenAI chat completion format with model, messages, and max_tokens
+
+**And** the `content` array is built based on content type:
+- Text-only: `[{ "type": "text", "text": "..." }]`
+- Screenshot-only: `[{ "type": "image_url", "image_url": { "url": "data:image/png;base64,..." } }]`
+- Hybrid: text item first, then all image items
+
+**And** model name is loaded from configuration (default: "email-analyzer")
+**And** max_tokens is loaded from configuration (default: 1000)
+**And** request formatting is encapsulated in a dedicated function
+**And** formatted request is logged (without base64 data) with contentItems count, hasText boolean, and imageCount
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Technology Stack Details - LLM Integration</section>
+        <snippet>
+Sparky LLM API (Outbound):
+- Endpoint: https://sparky.tail468b81.ts.net/v1/chat/completions
+- Format: OpenAI-compatible chat completion
+- Payload: Multimodal (text + base64 images)
+- Model: "email-analyzer"
+- Max tokens: configurable 500-1000
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Data Format Patterns - API Requests (Sparky LLM)</section>
+        <snippet>
+```typescript
+{
+  model: "email-analyzer",
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "..." },
+        { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
+      ]
+    }
+  ],
+  max_tokens: 1000
+}
+```
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Epic 4: AI Analysis Integration</section>
+        <snippet>
+Goal: Integrate with Sparky LLM API to analyze email content and generate tone/brand feedback.
+User Value: Service produces intelligent, personalized feedback using the fine-tuned model.
+FRs Covered: FR12-17, FR26-28, FR34, FR37-38
+        </snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <!-- No existing code - greenfield project -->
+      <note>This is the first story in Epic 4. No llm-client.ts exists yet. Will need to create src/services/llm-client.ts from scratch.</note>
+      <expected>
+        <file>
+          <path>src/services/llm-client.ts</path>
+          <kind>service</kind>
+          <symbol>formatLLMRequest</symbol>
+          <reason>Main function to create for formatting LLM requests</reason>
+        </file>
+        <file>
+          <path>src/lib/types.ts</path>
+          <kind>types</kind>
+          <symbol>LLMRequest, TextContent, ImageContent, ContentPackage</symbol>
+          <reason>Type definitions may be defined here or in llm-client.ts</reason>
+        </file>
+      </expected>
+    </code>
+
+    <dependencies>
+      <node>
+        <package>typescript</package>
+        <version>latest</version>
+        <usage>Type safety and compilation</usage>
+      </node>
+      <node>
+        <package>zod</package>
+        <version>latest</version>
+        <usage>Optional: Runtime validation of config and request structures</usage>
+      </node>
+      <builtin>
+        <feature>JSON.stringify</feature>
+        <usage>Serialize LLM request for API call</usage>
+      </builtin>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- File naming: kebab-case (llm-client.ts, not llmClient.ts or LLMClient.ts)
+- Type/Interface naming: PascalCase (LLMRequest, TextContent, ImageContent)
+- Function naming: camelCase (formatLLMRequest)
+- Named exports only for services (no default exports)
+- Model name and max_tokens must be loaded from configuration
+- Do not log actual email content or base64 image data - only metadata
+- Content array order: text first (if exists), then all images
+- Use strict TypeScript mode (strict: true, noUncheckedIndexedAccess: true)
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>LLMRequest</name>
+      <kind>TypeScript interface</kind>
+      <signature>
+```typescript
+interface LLMRequest {
+  model: string;
+  messages: Array<{
+    role: 'user';
+    content: Array<TextContent | ImageContent>;
+  }>;
+  max_tokens: number;
+}
+```
+      </signature>
+      <path>src/services/llm-client.ts</path>
+    </interface>
+    <interface>
+      <name>TextContent</name>
+      <kind>TypeScript interface</kind>
+      <signature>
+```typescript
+interface TextContent {
+  type: 'text';
+  text: string;
+}
+```
+      </signature>
+      <path>src/services/llm-client.ts</path>
+    </interface>
+    <interface>
+      <name>ImageContent</name>
+      <kind>TypeScript interface</kind>
+      <signature>
+```typescript
+interface ImageContent {
+  type: 'image_url';
+  image_url: {
+    url: string; // data URI with base64
+  };
+}
+```
+      </signature>
+      <path>src/services/llm-client.ts</path>
+    </interface>
+    <interface>
+      <name>ContentPackage</name>
+      <kind>TypeScript interface (from Epic 3)</kind>
+      <signature>
+```typescript
+interface ContentPackage {
+  contentType: 'text-only' | 'screenshot-only' | 'hybrid' | 'empty';
+  text: string;
+  images: EncodedImage[];
+}
+```
+      </signature>
+      <path>src/services/email-processor.ts (Epic 3)</path>
+    </interface>
+    <interface>
+      <name>EncodedImage</name>
+      <kind>TypeScript interface (from Epic 3)</kind>
+      <signature>
+```typescript
+interface EncodedImage {
+  filename: string;
+  contentType: string;
+  dataUrl: string; // Full data URI with base64
+}
+```
+      </signature>
+      <path>src/services/image-processor.ts (Epic 3)</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest testing framework. Test files co-located with source (*.test.ts). Test structure uses describe/it blocks. Focus on unit tests for formatLLMRequest function with different content scenarios. Use zod for schema validation where appropriate.
+    </standards>
+    <locations>
+src/**/*.test.ts (co-located with source files)
+Specifically: src/services/llm-client.test.ts
+    </locations>
+    <ideas>
+**Test Case 1: Format text-only request**
+- Given: ContentPackage with text, no images
+- When: formatLLMRequest called
+- Then: LLMRequest has one text content item, no image items
+
+**Test Case 2: Format screenshot-only request**
+- Given: ContentPackage with images, no text
+- When: formatLLMRequest called
+- Then: LLMRequest has only image_url content items
+
+**Test Case 3: Format hybrid request (text + images)**
+- Given: ContentPackage with both text and images
+- When: formatLLMRequest called
+- Then: LLMRequest has text item first, followed by all image items in order
+
+**Test Case 4: Load configuration values**
+- Given: Config with custom model name and max_tokens
+- When: formatLLMRequest called
+- Then: LLMRequest uses configured model and max_tokens
+
+**Test Case 5: Default configuration values**
+- Given: Config missing model or max_tokens
+- When: formatLLMRequest called
+- Then: LLMRequest uses defaults ("email-analyzer", 1000)
+
+**Test Case 6: Logging validation**
+- Given: Any ContentPackage
+- When: formatLLMRequest called
+- Then: Log contains contentItems count, hasText boolean, imageCount but NOT actual content or base64 data
+    </ideas>
+  </tests>
+</story-context>

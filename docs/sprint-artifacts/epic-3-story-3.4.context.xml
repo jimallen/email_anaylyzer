@@ -1,0 +1,186 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>3.4</storyId>
+    <title>Encode Images as Base64 for LLM API</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/home/jima/Code/email_anaylyzer/docs/sprint-artifacts/epic-3-story-3.4.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer</asA>
+    <iWant>images encoded as base64 strings</iWant>
+    <soThat>they can be embedded in JSON requests to the LLM API</soThat>
+    <tasks>
+- Add encodeImage function to src/services/image-processor.ts
+- Convert Buffer to base64 using buffer.toString('base64')
+- Create data URI with format prefix (data:image/png;base64,...)
+- Return EncodedImage interface with filename, contentType, dataUrl
+- Process multiple images using map over validated array
+- Log encoding metrics without exposing base64 content
+- Ensure encoding completes in under 1 second for 10MB images
+- Keep encoded images in memory (no disk storage)
+- Calculate total size for logging: sum of buffer lengths
+- Format output ready for LLM API content array integration
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** validated images (Buffer format)
+**When** encoding to base64
+**Then** each image Buffer is converted to base64 string using Node's built-in encoding:
+```typescript
+const base64 = buffer.toString('base64');
+```
+
+**And** base64 strings are prefixed with data URI scheme:
+- PNG: `data:image/png;base64,&lt;base64_string&gt;`
+- JPEG/JPG: `data:image/jpeg;base64,&lt;base64_string&gt;`
+
+**And** encoded images are returned as array with metadata:
+```typescript
+interface EncodedImage {
+  filename: string;
+  contentType: string;
+  dataUrl: string; // Full data URI with base64
+}
+```
+
+**And** encoding is logged (without actual base64 data):
+```json
+{
+  "msg": "Images encoded for LLM",
+  "imageCount": 2,
+  "totalSize": 456789
+}
+```
+
+**And** base64 encoding completes in &lt;1 second for images under 10MB
+
+**And** encoded images are ready for inclusion in LLM API request content array
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Content Analysis Requirements</section>
+        <snippet>FR13: System encodes images as base64 for inclusion in LLM API requests. Images must be formatted as data URIs with appropriate MIME type prefixes.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Dependencies</title>
+        <section>Image Processing</section>
+        <snippet>Image Processing: Native Buffer for base64 encoding. Uses Node.js built-in encoding without external dependencies.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Project Structure</title>
+        <section>services/image-processor.ts</section>
+        <snippet>Image download &amp; base64 encoding for FR4-6, FR13. Converts validated images to data URI format for LLM API integration.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Epic 3: Content Extraction &amp; Processing</section>
+        <snippet>Story 3.4: Encode Images as Base64 for LLM API - converts validated image buffers to base64-encoded data URIs for multimodal LLM requests.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/services/image-processor.ts</path>
+        <kind>service</kind>
+        <symbol>encodeImage</symbol>
+        <lines>TBD</lines>
+        <reason>New encoding function added to image processor - transforms buffers to data URIs</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <node>
+        <builtin>Buffer.toString('base64') - native Node.js</builtin>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Use only native Node.js Buffer.toString('base64') - no external encoding libraries
+- Data URI format: `data:{contentType};base64,{base64String}`
+- Correct MIME type in data URI: image/png, image/jpeg (not image/jpg)
+- Process multiple images efficiently: use map() over array
+- Encoding should complete in &lt;1 second for 10MB images (native performance)
+- Keep encoded data in memory only - no disk storage during encoding
+- Don't expose actual base64 content in logs - log count and total size only
+- Return type must be compatible with LLM API content array
+- Maintain TypeScript strict mode
+- Co-locate tests with source (image-processor.test.ts)
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>encodeImage</name>
+      <kind>Function signature</kind>
+      <signature>
+export function encodeImage(buffer: Buffer, contentType: string): string
+      </signature>
+      <path>src/services/image-processor.ts</path>
+    </interface>
+    <interface>
+      <name>EncodedImage</name>
+      <kind>TypeScript Interface</kind>
+      <signature>
+interface EncodedImage {
+  filename: string;
+  contentType: string;
+  dataUrl: string;
+}
+      </signature>
+      <path>src/services/image-processor.ts</path>
+    </interface>
+    <interface>
+      <name>Buffer.toString</name>
+      <kind>Built-in API</kind>
+      <signature>
+buffer.toString(encoding: 'base64'): string
+      </signature>
+      <path>Node.js Built-in</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest for testing. Co-locate tests (image-processor.test.ts). Test encoding correctness, data URI format, performance under load. Verify logging doesn't expose sensitive base64 content. Test with various image sizes and formats.
+    </standards>
+    <locations>
+src/**/*.test.ts (co-located with source files)
+    </locations>
+    <ideas>
+      <test acceptanceCriteriaId="AC1">
+        <description>Test base64 encoding produces valid output</description>
+        <approach>Create small buffer with known content, encode, decode back, verify matches original</approach>
+      </test>
+      <test acceptanceCriteriaId="AC2">
+        <description>Test data URI format is correct for PNG</description>
+        <approach>Encode PNG buffer, verify dataUrl starts with 'data:image/png;base64,'</approach>
+      </test>
+      <test acceptanceCriteriaId="AC3">
+        <description>Test data URI format is correct for JPEG</description>
+        <approach>Encode JPEG buffer, verify dataUrl starts with 'data:image/jpeg;base64,'</approach>
+      </test>
+      <test acceptanceCriteriaId="AC4">
+        <description>Test encoding performance with large images</description>
+        <approach>Create 10MB buffer, encode, measure time, verify &lt;1 second</approach>
+      </test>
+      <test acceptanceCriteriaId="AC5">
+        <description>Test batch encoding of multiple images</description>
+        <approach>Create array of 3-5 images, encode all, verify all have correct format and no data leaks in logs</approach>
+      </test>
+      <test acceptanceCriteriaId="AC6">
+        <description>Test logging doesn't expose base64 content</description>
+        <approach>Mock logger, verify log messages include count and size but no base64 string</approach>
+      </test>
+    </ideas>
+  </tests>
+</story-context>

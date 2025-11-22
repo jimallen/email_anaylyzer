@@ -1,0 +1,193 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>4.3</storyId>
+    <title>Parse and Validate LLM API Response</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-4-story-4.3.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer</asA>
+    <iWant>LLM API responses validated and parsed</iWant>
+    <soThat>I can safely extract feedback text for sending to users</soThat>
+    <tasks>
+- Add to `src/services/llm-client.ts`
+- Export function: `parseLLMResponse(response: unknown): string`
+- Define zod schema for LLMResponse validation
+- Extract feedback text from `choices[0].message.content`
+- Validate choices array has at least one item
+- Handle invalid structure: log full response, throw error with context
+- Handle empty feedback: log warning, return empty string
+- Validate feedback length: log warning if >5000 chars (don't truncate)
+- Trim whitespace from feedback before returning
+- Never log actual feedback content - only metadata (length)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** an LLM API response is received
+**When** parsing the response
+**Then** response structure is validated using zod schema
+
+**And** feedback text is extracted from `choices[0].message.content`
+**And** valid response returns feedback string and logs extraction with feedbackLength
+**And** invalid structure triggers zod validation error, logs full response, re-throws with context
+**And** empty feedback triggers warning log, returns empty string
+**And** feedback >5000 chars logs warning but doesn't truncate
+**And** actual feedback content is NOT logged (privacy)
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Integration Points - Sparky LLM API Response</section>
+        <snippet>
+Response:
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "content": "Feedback: The tone is too casual..."
+      }
+    }
+  ]
+}
+```
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Technology Stack - Schema Validation</section>
+        <snippet>
+Key Libraries:
+- zod - Schema validation (webhooks, config)
+TypeScript-first, excellent type inference
+        </snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <expected>
+        <file>
+          <path>src/services/llm-client.ts</path>
+          <kind>service</kind>
+          <symbol>parseLLMResponse</symbol>
+          <reason>New function to implement for parsing and validating LLM responses</reason>
+        </file>
+        <file>
+          <path>src/services/llm-client.ts</path>
+          <kind>service</kind>
+          <symbol>LLMResponseSchema</symbol>
+          <reason>Zod schema for runtime validation of LLM API responses</reason>
+        </file>
+      </expected>
+    </code>
+
+    <dependencies>
+      <node>
+        <package>zod</package>
+        <version>latest</version>
+        <usage>Runtime validation of LLM API response structure</usage>
+      </node>
+      <node>
+        <package>typescript</package>
+        <version>latest</version>
+        <usage>Type inference from zod schema</usage>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Use zod for runtime validation (TypeScript-first approach)
+- Extract from choices[0].message.content (first choice only)
+- Validate choices array is non-empty before accessing [0]
+- Never log actual feedback text - only metadata (length)
+- Trim whitespace from feedback before returning
+- Log warning if feedback is empty or >5000 characters
+- Re-throw validation errors with descriptive context
+- Log full response body on validation failure (for debugging)
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>parseLLMResponse</name>
+      <kind>Function signature</kind>
+      <signature>
+```typescript
+export function parseLLMResponse(response: unknown): string
+```
+      </signature>
+      <path>src/services/llm-client.ts</path>
+    </interface>
+    <interface>
+      <name>LLMResponseSchema</name>
+      <kind>Zod schema</kind>
+      <signature>
+```typescript
+const LLMResponseSchema = z.object({
+  choices: z.array(
+    z.object({
+      message: z.object({
+        content: z.string()
+      })
+    })
+  )
+});
+```
+      </signature>
+      <path>src/services/llm-client.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest testing framework. Test zod validation with valid and invalid response structures. Test edge cases (empty choices, empty content, long content). Verify logging behavior.
+    </standards>
+    <locations>
+src/services/llm-client.test.ts
+    </locations>
+    <ideas>
+**Test Case 1: Valid response extraction**
+- Given: LLMResponse with valid structure and content
+- When: parseLLMResponse called
+- Then: Returns content string, logs feedbackLength
+
+**Test Case 2: Invalid response structure (missing choices)**
+- Given: Response object without choices field
+- When: parseLLMResponse called
+- Then: Zod validation error thrown, response logged
+
+**Test Case 3: Empty choices array**
+- Given: Response with choices: []
+- When: parseLLMResponse called
+- Then: Error thrown (cannot access [0])
+
+**Test Case 4: Empty feedback content**
+- Given: Response with message.content = ""
+- When: parseLLMResponse called
+- Then: Warning logged, empty string returned
+
+**Test Case 5: Long feedback content (>5000 chars)**
+- Given: Response with 6000-character feedback
+- When: parseLLMResponse called
+- Then: Warning logged, full content returned (not truncated)
+
+**Test Case 6: Whitespace trimming**
+- Given: Response with content = "  feedback text  \n"
+- When: parseLLMResponse called
+- Then: Returns "feedback text" (trimmed)
+
+**Test Case 7: Privacy - no content logging**
+- Given: Any response
+- When: parseLLMResponse called
+- Then: Logs do NOT contain actual feedback text, only length
+    </ideas>
+  </tests>
+</story-context>

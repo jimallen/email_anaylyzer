@@ -1,0 +1,198 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>3.3</storyId>
+    <title>Validate Image Formats and Size Limits</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/home/jima/Code/email_anaylyzer/docs/sprint-artifacts/epic-3-story-3.3.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system operator</asA>
+    <iWant>image format and size validation</iWant>
+    <soThat>only supported formats are processed and large files don't consume excessive resources</soThat>
+    <tasks>
+- Add validateImage function to src/services/image-processor.ts
+- Create SUPPORTED_IMAGE_TYPES constant with approved formats
+- Validate MIME type against supported list (PNG, JPEG, JPG only)
+- Check file size against configured max_image_size_bytes limit
+- Load size config from config service
+- Log validation results for both valid and invalid images
+- Return array of validated images only
+- Log warnings for unsupported formats and oversized images
+- Integrate validation into image processing pipeline
+- Consider future enhancement: magic byte verification vs MIME trust
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** an image is downloaded successfully
+**When** validation checks run
+**Then** MIME type is checked against supported formats:
+- `image/png` → supported
+- `image/jpeg` → supported
+- `image/jpg` → supported
+- All others → unsupported
+
+**And** file size is checked against configured limit (from config: `max_image_size_bytes`, default 10MB)
+
+**And** if image is valid (supported format AND under size limit):
+- Validation passes
+- Image proceeds to base64 encoding
+
+**And** if MIME type is unsupported:
+- Image is rejected
+- Warning logged:
+```json
+{
+  "level": "warn",
+  "msg": "Unsupported image format",
+  "filename": "document.pdf",
+  "contentType": "application/pdf"
+}
+```
+- Unsupported image skipped, processing continues
+
+**And** if image exceeds size limit:
+- Image is rejected
+- Warning logged:
+```json
+{
+  "level": "warn",
+  "msg": "Image exceeds size limit",
+  "filename": "large.png",
+  "size": 15728640,
+  "limit": 10485760
+}
+```
+- Oversized image skipped, processing continues
+
+**And** validation results include list of valid images only
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Email Reception & Processing</section>
+        <snippet>FR6: System supports common image formats (PNG, JPG, JPEG) for screenshot analysis. Only approved formats are processed to ensure LLM API compatibility.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Configuration</title>
+        <section>Configuration Management</section>
+        <snippet>max_image_size_bytes: Maximum file size for image processing (default 10MB). Configuration loaded from settings.json with hot-reload capability.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Project Structure</title>
+        <section>services/image-processor.ts</section>
+        <snippet>Image validation and filtering to ensure only supported formats and acceptable sizes proceed to encoding stage.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Epic 3: Content Extraction & Processing</section>
+        <snippet>Story 3.3: Validate Image Formats and Size Limits - filters downloaded images by format and size before base64 encoding.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/services/image-processor.ts</path>
+        <kind>service</kind>
+        <symbol>validateImage</symbol>
+        <lines>TBD</lines>
+        <reason>New validation function added to image processor service - filters images by format and size</reason>
+      </artifact>
+      <artifact>
+        <path>src/services/config.ts</path>
+        <kind>service</kind>
+        <symbol>getConfig</symbol>
+        <lines>TBD</lines>
+        <reason>Configuration service - provides max_image_size_bytes setting</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <typescript>
+        <package name="@types/node" version="latest">Type definitions for Node.js</package>
+      </typescript>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Only support three MIME types: image/png, image/jpeg, image/jpg
+- Size limit must be configurable via settings.json with default 10MB (10485760 bytes)
+- Invalid images must be filtered but not crash service - continue with valid images
+- Validation must run after download, before encoding
+- Log format violations and size violations separately
+- No magic byte verification in MVP - trust MIME type from Resend
+- Return only validated images (filtered array)
+- Maintain TypeScript strict mode
+- Co-locate tests with source (image-processor.test.ts)
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>validateImage</name>
+      <kind>Function signature</kind>
+      <signature>
+export function validateImage(attachment: Attachment, data: Buffer, maxSize: number): boolean
+      </signature>
+      <path>src/services/image-processor.ts</path>
+    </interface>
+    <interface>
+      <name>SUPPORTED_IMAGE_TYPES</name>
+      <kind>Constant</kind>
+      <signature>
+const SUPPORTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg'];
+      </signature>
+      <path>src/services/image-processor.ts</path>
+    </interface>
+    <interface>
+      <name>Attachment</name>
+      <kind>TypeScript Interface</kind>
+      <signature>
+interface Attachment {
+  url: string;
+  filename: string;
+  contentType: string;
+}
+      </signature>
+      <path>src/services/email-processor.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest for testing. Co-locate tests with source (image-processor.test.ts). Test all validation paths: valid format/size, unsupported format, oversized file. Verify logging for both success and rejection cases. Use mocks for config service and logger.
+    </standards>
+    <locations>
+src/**/*.test.ts (co-located with source files)
+    </locations>
+    <ideas>
+      <test acceptanceCriteriaId="AC1">
+        <description>Test validation passes for supported image formats</description>
+        <approach>Test with PNG, JPEG, JPG attachments under size limit, verify all return true</approach>
+      </test>
+      <test acceptanceCriteriaId="AC2">
+        <description>Test validation rejects unsupported formats</description>
+        <approach>Test with PDF, GIF, BMP attachments, verify all return false and warning logged</approach>
+      </test>
+      <test acceptanceCriteriaId="AC3">
+        <description>Test validation rejects oversized images</description>
+        <approach>Create image exceeding 10MB limit, verify false returned and size violation logged</approach>
+      </test>
+      <test acceptanceCriteriaId="AC4">
+        <description>Test filtering array of mixed valid/invalid images</description>
+        <approach>Provide array with mix of valid PNG and oversized JPG, verify only valid returned</approach>
+      </test>
+      <test acceptanceCriteriaId="AC5">
+        <description>Test logging format and content</description>
+        <approach>Mock logger, verify warnings include filename, contentType (format), size (oversized)</approach>
+      </test>
+    </ideas>
+  </tests>
+</story-context>

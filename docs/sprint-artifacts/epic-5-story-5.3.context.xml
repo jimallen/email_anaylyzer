@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>5</epicId>
+    <storyId>5.3</storyId>
+    <title>Format Error Email Responses for Failures</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-5-story-5.3.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>team member</asA>
+    <iWant>helpful error messages when analysis fails</iWant>
+    <soThat>I understand what went wrong and know what to do next</soThat>
+    <tasks>
+      <task>Add formatErrorEmail function to src/services/email-formatter.ts</task>
+      <task>Create error email templates for content processing errors</task>
+      <task>Create error email templates for LLM errors</task>
+      <task>Implement error type detection logic</task>
+      <task>Extract user-friendly messages from error objects</task>
+      <task>Add technical detail redaction (no stack traces in user email)</task>
+      <task>Implement structured logging for error emails</task>
+      <task>Write unit tests for error formatting scenarios</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">Subject line is always: "Email Analysis Error"</criterion>
+    <criterion id="AC2">Email body is plain text with user-friendly error message from error object</criterion>
+    <criterion id="AC3">Content errors template: greeting, error message, actionable fix suggestion, footer</criterion>
+    <criterion id="AC4">LLM errors template: greeting, error message, retry suggestion, footer</criterion>
+    <criterion id="AC5">Error messages taken from error.userMessage property</criterion>
+    <criterion id="AC6">Technical details NOT included in user-facing email (logged separately)</criterion>
+    <criterion id="AC7">Error email formatting logged with to, errorCode but no message details</criterion>
+    <criterion id="AC8">Different templates used based on error type (Content vs LLM)</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Error Handling & Recovery (FR26-32)</section>
+        <snippet>FR26: System detects LLM API timeouts. FR27: System sends fallback error email to sender if LLM API fails. FR28: System logs all processing errors with context.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Error Handling</section>
+        <snippet>Custom error classes: ContentProcessingError, LLMError. Each includes userMessage for end-user communication and technical details for logging.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Epic 5: Response Delivery & User Feedback</section>
+        <snippet>Fallback error emails for LLM failures. Error handling for missing/invalid content. User-friendly error messages.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/services/email-formatter.ts</path>
+        <kind>service</kind>
+        <symbol>formatErrorEmail</symbol>
+        <reason>Add error email formatting function alongside success email function</reason>
+      </artifact>
+      <artifact>
+        <path>src/lib/types.ts</path>
+        <kind>types</kind>
+        <symbol>ContentProcessingError, LLMError</symbol>
+        <reason>Error classes with userMessage property that formatErrorEmail will use</reason>
+      </artifact>
+      <artifact>
+        <path>src/__tests__/email-formatter.test.ts</path>
+        <kind>test</kind>
+        <symbol>Error formatting tests</symbol>
+        <reason>Unit tests for error email templates and logic</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <ecosystem name="node">
+        <package name="pino" version="latest">Logging error metadata without sensitive details</package>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>Email body must be plain text only</constraint>
+    <constraint>Subject line must always be "Email Analysis Error" (no variation)</constraint>
+    <constraint>No technical error codes or stack traces in user-facing email</constraint>
+    <constraint>Must use error.userMessage property for user-visible text</constraint>
+    <constraint>Different messages for content vs LLM errors to guide user action</constraint>
+    <constraint>Logging must include errorCode but not user message for privacy</constraint>
+    <constraint>Error code/type is logged separately from user email</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>formatErrorEmail</name>
+      <kind>function signature</kind>
+      <signature>function formatErrorEmail(to: string, error: ContentProcessingError | LLMError): EmailContent</signature>
+      <path>src/services/email-formatter.ts</path>
+    </interface>
+    <interface>
+      <name>ContentProcessingError</name>
+      <kind>error class</kind>
+      <signature>class ContentProcessingError extends Error { code: string; userMessage: string; }</signature>
+      <path>src/lib/types.ts</path>
+    </interface>
+    <interface>
+      <name>LLMError</name>
+      <kind>error class</kind>
+      <signature>class LLMError extends Error { code: string; userMessage: string; }</signature>
+      <path>src/lib/types.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>Use vitest framework. Unit tests should cover both error types (ContentProcessingError and LLMError) with different error codes. Tests should verify correct template selection, user-friendly message insertion, and logging output. Verify no technical details leak into user email.</standards>
+    <locations>src/__tests__/email-formatter.test.ts</locations>
+    <ideas>
+      <idea ac="AC1">Test subject line is always "Email Analysis Error" regardless of error type</idea>
+      <idea ac="AC2">Test error message from error.userMessage is inserted correctly</idea>
+      <idea ac="AC3">Test content error template structure and action guidance</idea>
+      <idea ac="AC4">Test LLM error template structure and retry guidance</idea>
+      <idea ac="AC5">Test different messages for content errors (NO_CONTENT, INVALID_FORMAT) vs LLM errors (TIMEOUT, NETWORK_ERROR)</idea>
+      <idea ac="AC6">Test no error codes or stack traces appear in email body</idea>
+      <idea ac="AC7">Test logging includes error code but not full error message</idea>
+    </ideas>
+  </tests>
+</story-context>

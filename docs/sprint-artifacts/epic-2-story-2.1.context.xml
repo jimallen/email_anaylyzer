@@ -1,0 +1,197 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>2</epicId>
+    <storyId>2.1</storyId>
+    <title>Create Webhook Endpoint with Payload Validation</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-2-story-2.1.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>team member</asA>
+    <iWant>the service to receive emails via Resend webhook</iWant>
+    <soThat>I can send draft emails to the analyzer service for review</soThat>
+    <tasks>
+      - Create src/routes/webhook.ts as Fastify plugin
+      - Create src/lib/schemas.ts for zod schemas
+      - Define WebhookPayloadSchema using zod with email validation
+      - Use TypeScript type inference: type WebhookPayload = z.infer&lt;typeof WebhookPayloadSchema&gt;
+      - Register webhook route in src/app.ts
+      - Implement route pattern with payload validation
+      - Handle zod parse errors (automatically return 500 via error plugin)
+      - Log webhook receipt with metadata (from, to, subject)
+      - Return success acknowledgment
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    **Given** the service is running with configuration loaded
+    **When** Resend sends a webhook POST to `/webhook/inbound-email`
+    **Then** the endpoint accepts the request and returns HTTP 200
+
+    **And** the webhook payload is validated using zod schema with these required fields:
+    - `from` (string, email format)
+    - `to` (string, email format)
+    - `subject` (string)
+    - `text` (string, optional)
+    - `html` (string, optional)
+    - `attachments` (array, optional, each with `url`, `filename`, `contentType`)
+
+    **And** invalid payloads return HTTP 500 with error logged
+
+    **And** the endpoint extracts and logs metadata:
+    - Sender email
+    - Recipient email
+    - Subject line
+    - Timestamp (current time in ISO 8601)
+    - Correlation ID (Fastify request.id)
+
+    **And** request processing is logged:
+    ```json
+    {
+      "level": "info",
+      "reqId": "req-abc123",
+      "msg": "Webhook received",
+      "from": "user@company.com",
+      "to": "analyzer@resend.dev",
+      "subject": "Draft: Customer email"
+    }
+    ```
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>API Specification - Webhook Endpoint</section>
+        <snippet>**Webhook Endpoint (Inbound from Resend):** POST /webhook/inbound-email, Content-Type: application/json, Event Type: email.received. Payload Structure: Resend's standard webhook format containing email metadata (from, to, subject, timestamp), text and HTML body content, attachments list with download URLs.</snippet>
+      </doc>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Functional Requirements - Email Reception & Processing</section>
+        <snippet>**FR1:** System receives incoming emails via Resend webhook at designated endpoint. **FR2:** System parses email metadata (sender, recipient, subject, timestamp) from webhook payload.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Integration Points - Resend Webhook</section>
+        <snippet>**1. Resend Webhook (Inbound):** Endpoint: POST /webhook/inbound-email, Format: JSON webhook payload, Authentication: Whitelist validation (email/domain), Payload: Email metadata + text + attachment URLs, Response: HTTP 200/403/500</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Project Structure</section>
+        <snippet>src/routes/webhook.ts - POST /webhook/inbound-email (FR1), src/lib/schemas.ts - Zod validation schemas (FR2)</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Implementation Patterns - File Organization</section>
+        <snippet>**Route Files:** One route per file in routes/, Export Fastify plugin: export default async function webhookRoute(fastify: FastifyInstance) {}, Register in app.ts. **Import Order:** 1) Node built-ins, 2) External packages (fastify, zod), 3) Internal modules, 4) Types</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Data Architecture - Data Models</section>
+        <snippet>**WebhookPayload Interface:** { from: string, to: string, subject: string, text?: string, html?: string, attachments?: Array&lt;{ url: string, filename: string, contentType: string }&gt; }</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epics Breakdown</title>
+        <section>Epic 2 - Story 2.1</section>
+        <snippet>**Prerequisites:** Epic 1 complete (Stories 1.1-1.5). **Technical Notes:** Create src/routes/webhook.ts as Fastify plugin, Create src/lib/schemas.ts for zod schemas, Use TypeScript type inference from zod, Register webhook route in src/app.ts, Zod parse errors automatically return 500.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/routes/webhook.ts</path>
+        <kind>route</kind>
+        <symbol>webhookRoute</symbol>
+        <lines></lines>
+        <reason>New file to be created - Fastify plugin for webhook endpoint</reason>
+      </artifact>
+      <artifact>
+        <path>src/lib/schemas.ts</path>
+        <kind>schema</kind>
+        <symbol>WebhookPayloadSchema</symbol>
+        <lines></lines>
+        <reason>New file to be created - Zod validation schemas for webhook payload</reason>
+      </artifact>
+      <artifact>
+        <path>src/app.ts</path>
+        <kind>application</kind>
+        <symbol>N/A</symbol>
+        <lines></lines>
+        <reason>Needs to register webhook route plugin (may or may not exist from Epic 1)</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <node>
+        <fastify>latest (from Epic 1.1 initialization)</fastify>
+        <zod>latest (from Epic 1.1 initialization)</zod>
+        <typescript>latest (from Epic 1.1 initialization)</typescript>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    - **Naming Convention:** Use kebab-case for all file names (webhook.ts, schemas.ts)
+    - **Route Pattern:** Export default async function, register in app.ts
+    - **Validation:** Use zod for runtime validation with TypeScript type inference
+    - **Logging:** Use Fastify's pino logger via request.log
+    - **Error Handling:** Let zod parse errors automatically return 500 (handled by error plugin from Epic 1)
+    - **Response Format:** HTTP 200 for success, return { success: true }
+    - **No Processing Yet:** Just acknowledge receipt - actual email processing comes in later epics
+    - **Dependencies:** Requires Epic 1 complete (Fastify initialized, logging setup, config loaded)
+    - **Correlation IDs:** Use Fastify's auto-generated request.id for tracing
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>POST /webhook/inbound-email</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /webhook/inbound-email - Accepts JSON webhook payload from Resend</signature>
+      <path>src/routes/webhook.ts</path>
+    </interface>
+    <interface>
+      <name>WebhookPayloadSchema</name>
+      <kind>Zod schema</kind>
+      <signature>z.object({ from: z.string().email(), to: z.string().email(), subject: z.string(), text: z.string().optional(), html: z.string().optional(), attachments: z.array(...).optional() })</signature>
+      <path>src/lib/schemas.ts</path>
+    </interface>
+    <interface>
+      <name>WebhookPayload Type</name>
+      <kind>TypeScript type</kind>
+      <signature>type WebhookPayload = z.infer&lt;typeof WebhookPayloadSchema&gt;</signature>
+      <path>src/lib/schemas.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Use vitest for testing (from Epic 1.1). Test files co-located with source using *.test.ts naming.
+      Unit tests for all functions, integration tests for API endpoints, error handling validation.
+      Coverage target: 80%+ for critical paths. Test structure: describe() blocks for organization.
+    </standards>
+    <locations>
+      - src/routes/webhook.test.ts (co-located with webhook.ts)
+      - src/lib/schemas.test.ts (co-located with schemas.ts)
+    </locations>
+    <ideas>
+      - **AC1 Test:** Valid webhook payload returns HTTP 200 with { success: true }
+      - **AC2 Test:** Validate required fields (from, to, subject) are present and email format
+      - **AC2 Test:** Validate optional fields (text, html, attachments) when present
+      - **AC3 Test:** Invalid payload (missing required field) returns HTTP 500
+      - **AC3 Test:** Invalid email format in from/to fields returns HTTP 500
+      - **AC4 Test:** Verify metadata extraction and logging (from, to, subject, timestamp, reqId)
+      - **AC5 Test:** Verify request.id correlation ID is included in logs
+      - **Integration Test:** Full webhook POST with valid payload flows through route handler
+      - **Integration Test:** Mock Fastify app and register webhook route plugin
+      - **Error Test:** Zod validation errors are caught and logged appropriately
+    </ideas>
+  </tests>
+</story-context>

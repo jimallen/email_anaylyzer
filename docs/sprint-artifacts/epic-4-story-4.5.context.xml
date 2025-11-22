@@ -1,0 +1,208 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>4.5</storyId>
+    <title>Add Structured Logging for LLM Analysis Metrics</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-4-story-4.5.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system operator</asA>
+    <iWant>comprehensive metrics and logs for LLM analysis</iWant>
+    <soThat>I can monitor performance, track usage, and debug issues</soThat>
+    <tasks>
+- Add comprehensive logging throughout `src/services/llm-client.ts`
+- Log analysis started with reqId, sender, contentType, hasText, imageCount
+- Log analysis completed with duration, feedbackLength, success
+- Log analysis failed with errorCode, duration, success: false
+- Track timing: totalDuration, apiCallDuration, formattingDuration, parsingDuration
+- Calculate overhead: totalDuration - (format + apiCall + parse)
+- Log performance metrics summary
+- Use request.log for correlation (pass logger from webhook handler)
+- Log at appropriate levels: info (normal), warn (recoverable), error (failures)
+- Never log actual content, feedback text, base64 images, or API keys
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** LLM analysis is performed
+**When** logging metrics throughout the process
+**Then** the following events are logged:
+- Analysis Started (info): reqId, sender, contentType, hasText, imageCount
+- Analysis Completed (info): reqId, duration, feedbackLength, success: true
+- Analysis Failed (error): reqId, duration, errorCode, success: false
+
+**And** performance metrics tracked: totalDuration, apiCallDuration, formattingDuration, parsingDuration, overhead
+**And** metrics logged in summary with calculated overhead
+**And** correlation ID (request.id) included in all logs
+**And** logs never contain: email content, feedback text, base64 images, API keys
+**And** logs contain useful metadata: sender, content type, timings, error codes, request IDs
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Logging Strategy - Structured Log Format</section>
+        <snippet>
+```typescript
+log.info({
+  correlationId: request.id,  // Fastify auto-generated
+  sender: email.from,
+  recipient: email.to,
+  hasScreenshot: !!attachments.length,
+  hasText: !!email.text,
+  llmDuration: 1250,
+  totalDuration: 2100,
+  success: true
+}, 'Email processed successfully');
+```
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Logging Strategy - Log Levels</section>
+        <snippet>
+Log Levels (pino):
+- info - Normal operations (email received, processed, sent)
+- warn - Recoverable issues (LLM timeout, image download failure)
+- error - Failures (blocked sender, API errors)
+- fatal - Service crash
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 1.5 - Structured Logging Infrastructure</section>
+        <snippet>
+Pino is included with Fastify by default - configure in src/app.ts
+Access logger via request.log.info(), request.log.error(), etc.
+Correlation ID available as request.id (auto-generated)
+Never log full email content - only metadata (sender, has_text, has_image)
+        </snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <expected>
+        <file>
+          <path>src/services/llm-client.ts</path>
+          <kind>service</kind>
+          <symbol>All LLM functions</symbol>
+          <reason>Add logging to formatLLMRequest, callLLMAPI, parseLLMResponse</reason>
+        </file>
+        <file>
+          <path>src/lib/logger.ts</path>
+          <kind>utility</kind>
+          <symbol>logPerformanceMetrics (optional)</symbol>
+          <reason>Helper function for structured performance logging</reason>
+        </file>
+      </expected>
+    </code>
+
+    <dependencies>
+      <node>
+        <package>pino</package>
+        <version>Fastify default</version>
+        <usage>Structured JSON logging with correlation IDs</usage>
+      </node>
+      <builtin>
+        <feature>Date.now()</feature>
+        <usage>Track timing at key points for metrics</usage>
+      </builtin>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Use request.log (pino logger passed from Fastify)
+- Include request.id (correlation ID) in all logs
+- Never log actual email content or LLM feedback text
+- Never log base64 encoded images
+- Never log API keys or sensitive configuration
+- Log at appropriate levels: info/warn/error
+- Track timing with Date.now() at each pipeline stage
+- Calculate overhead as totalDuration minus sum of stage durations
+- Ensure FR34, FR37, FR38 compliance (analysis results, timing, structured logs)
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>PerformanceMetrics (optional)</name>
+      <kind>TypeScript interface</kind>
+      <signature>
+```typescript
+interface PerformanceMetrics {
+  totalDuration: number;
+  apiCallDuration: number;
+  formattingDuration: number;
+  parsingDuration: number;
+  overhead: number;
+}
+```
+      </signature>
+      <path>src/services/llm-client.ts</path>
+    </interface>
+    <interface>
+      <name>Pino Logger methods</name>
+      <kind>API</kind>
+      <signature>
+```typescript
+request.log.info({ ...metadata }, 'Message');
+request.log.warn({ ...metadata }, 'Message');
+request.log.error({ ...metadata }, 'Message');
+```
+      </signature>
+      <path>Fastify request object</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest testing framework. Mock pino logger. Verify log calls with correct metadata. Test that sensitive data is NOT logged. Verify timing calculations.
+    </standards>
+    <locations>
+src/services/llm-client.test.ts
+    </locations>
+    <ideas>
+**Test Case 1: Analysis started logging**
+- Given: LLM analysis begins
+- When: formatLLMRequest called
+- Then: info log with reqId, sender, contentType, hasText, imageCount
+
+**Test Case 2: Analysis completed logging**
+- Given: LLM analysis succeeds
+- When: parseLLMResponse returns
+- Then: info log with duration, feedbackLength, success: true
+
+**Test Case 3: Analysis failed logging**
+- Given: LLM API throws error
+- When: Error caught
+- Then: error log with errorCode, duration, success: false
+
+**Test Case 4: Performance metrics logging**
+- Given: Full LLM pipeline executes
+- When: Analysis completes
+- Then: Log contains totalDuration, apiCallDuration, formattingDuration, parsingDuration, overhead
+
+**Test Case 5: Privacy - no sensitive data logged**
+- Given: Any LLM operation
+- When: Logs generated
+- Then: Logs do NOT contain email content, feedback text, or base64 images
+
+**Test Case 6: Correlation ID in all logs**
+- Given: request.id = "req-abc123"
+- When: Multiple log statements executed
+- Then: All logs include reqId: "req-abc123"
+
+**Test Case 7: Overhead calculation**
+- Given: formatting=12ms, apiCall=3245ms, parsing=8ms, total=3456ms
+- When: Metrics logged
+- Then: overhead = 3456 - (12 + 3245 + 8) = 191ms
+    </ideas>
+  </tests>
+</story-context>

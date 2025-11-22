@@ -1,0 +1,120 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>3.2</storyId>
+    <title>Download Images from Resend URLs</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/home/jima/Code/email_anaylyzer/docs/sprint-artifacts/epic-3-story-3.2.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>team member</asA>
+    <iWant>the service to download my screenshot attachments</iWant>
+    <soThat>they can be sent to the AI for visual analysis</soThat>
+    <tasks>- Create `src/services/image-processor.ts`
+- Export function: `downloadImage(url: string, timeout: number): Promise<Buffer>`
+- Use native fetch (Node 25 built-in)
+- Timeout pattern with AbortController (see acceptance criteria)
+- Error handling: wrap in try/catch, return null on failure
+- Download multiple images concurrently: `Promise.allSettled()`
+- Track timing: `const start = Date.now(); const duration = Date.now() - start;`
+- Return type: `Promise<Array<{ filename: string; data: Buffer } | null>>`
+- Filter out null results (failed downloads) before returning</tasks>
+  </story>
+
+  <acceptanceCriteria>**Given** image attachments are detected in the payload
+**When** the service downloads each image
+**Then** it makes an HTTP GET request to the Resend attachment URL using native fetch
+
+**And** download includes timeout of 10 seconds (from config: `image_download_timeout_ms`)
+
+**And** download uses AbortController for timeout enforcement:
+```typescript
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), timeout);
+const response = await fetch(url, { signal: controller.signal });
+```
+
+**And** successful downloads return binary image data as Buffer
+
+**And** download is logged with timing:
+```json
+{
+  "msg": "Image downloaded",
+  "filename": "screenshot.png",
+  "size": 245678,
+  "duration": 823
+}
+```
+
+**And** if download fails (timeout, network error, 404):
+- Error is caught and logged with context
+- Download failure does NOT crash entire request
+- Failed image is skipped, processing continues with other images/text
+- Failure logged:
+```json
+{
+  "level": "warn",
+  "msg": "Image download failed",
+  "filename": "screenshot.png",
+  "error": "timeout after 10s"
+}
+```
+
+**And** downloaded images are returned as array of buffers for encoding</acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic 3: Content Extraction & Processing</title>
+        <section>Story 3.2: Download Images from Resend URLs</section>
+        <snippet>System downloads image attachments from Resend URLs with 10-second timeout using native fetch and AbortController. Failed downloads are logged but don't block processing.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Integration Points</title>
+        <section>Resend Attachment Download</section>
+        <snippet>Source: Attachment URLs from webhook payload. Method: GET via native fetch. Timeout: 10 seconds. Format: Binary image data (PNG/JPG/JPEG). Processing: Convert to base64 for LLM API.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Implementation Patterns</title>
+        <section>Communication Patterns - HTTP Timeouts</section>
+        <snippet>Image download: 10 seconds using AbortController with setTimeout pattern. Retry Logic: Image download failure - No retry, process text-only.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Project Structure</title>
+        <section>services/image-processor.ts</section>
+        <snippet>Image download & base64 encoding for FR4-6, FR13. Handles download failures gracefully without blocking request processing.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/services/image-processor.ts</path>
+        <kind>service</kind>
+        <symbol>N/A - file to be created</symbol>
+        <lines>N/A</lines>
+        <reason>New service module to be created for image download functionality</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <node>
+        <package>@types/node</package>
+        <version>latest</version>
+        <reason>Type definitions for Buffer, fetch, AbortController</reason>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints></constraints>
+  <interfaces></interfaces>
+  <tests>
+    <standards></standards>
+    <locations></locations>
+    <ideas></ideas>
+  </tests>
+</story-context>

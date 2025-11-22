@@ -1,0 +1,197 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>3.5</storyId>
+    <title>Handle Content Scenarios (Text/Screenshot/Hybrid)</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/home/jima/Code/email_anaylyzer/docs/sprint-artifacts/epic-3-story-3.5.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>team member</asA>
+    <iWant>the service to handle my email regardless of whether I include text, screenshots, or both</iWant>
+    <soThat>I have flexibility in how I submit drafts for review</soThat>
+    <tasks>
+- Create categorizeContent function in src/services/email-processor.ts
+- Define ContentPackage interface with contentType, text, images fields
+- Implement categorization logic: text-only, screenshot-only, hybrid, empty
+- Log content type with each request
+- Prepare content package for LLM API based on scenario
+- Validate at least one of text or images exists
+- Mark empty content for error handling in Epic 4
+- Categorization values: text-only, screenshot-only, hybrid, empty
+- Handle edge cases: empty string after trim, empty image array
+- Ensure logging complies with FR39 (structured logging)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** email content has been extracted and processed
+**When** determining content scenario
+**Then** service categorizes as one of three types:
+
+**Scenario 1: Text-Only Email**
+- Text content exists (non-empty string)
+- No valid images (no attachments or all failed/invalid)
+- Logged as: `{ "contentType": "text-only", "hasText": true, "hasImages": false }`
+
+**Scenario 2: Screenshot-Only Email**
+- No text content (empty or missing)
+- One or more valid images
+- Logged as: `{ "contentType": "screenshot-only", "hasText": false, "hasImages": true, "imageCount": 2 }`
+
+**Scenario 3: Hybrid Email**
+- Text content exists
+- One or more valid images
+- Logged as: `{ "contentType": "hybrid", "hasText": true, "hasImages": true, "imageCount": 1 }`
+
+**And** content type is logged with each request for tracking
+
+**And** service prepares content package for LLM API based on scenario:
+- Text-only: `{ text: string, images: [] }`
+- Screenshot-only: `{ text: "", images: EncodedImage[] }`
+- Hybrid: `{ text: string, images: EncodedImage[] }`
+
+**And** content package is validated:
+- At least one of text or images must exist
+- If both are empty/missing, mark as error for handling in Epic 4
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Content Analysis</section>
+        <snippet>FR18: System handles screenshot-only emails (no text in body) by sending image-only analysis request. FR19: System handles text-only emails (no screenshot) by sending text-only analysis request. FR20: System handles hybrid emails (text + screenshot) by sending combined multimodal request.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Content Processing Pipeline</title>
+        <section>Content Scenarios</section>
+        <snippet>Service categorizes incoming email as text-only, screenshot-only, hybrid, or empty. Content package is prepared for LLM API based on scenario type.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture - Logging Requirements</title>
+        <section>Structured Logging (FR33-39)</section>
+        <snippet>Content type is logged with each request for tracking and debugging. Structured JSON format with clear field names for filtering and analysis.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Epic 3: Content Extraction &amp; Processing</section>
+        <snippet>Story 3.5: Handle Content Scenarios (Text/Screenshot/Hybrid) - categorizes email by content type and prepares data package for LLM API.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/services/email-processor.ts</path>
+        <kind>service</kind>
+        <symbol>categorizeContent</symbol>
+        <lines>TBD</lines>
+        <reason>New function to categorize content by type and prepare LLM API package</reason>
+      </artifact>
+      <artifact>
+        <path>src/services/email-processor.ts</path>
+        <kind>service</kind>
+        <symbol>extractTextContent</symbol>
+        <lines>TBD</lines>
+        <reason>Existing text extraction from Story 2.2 - provides text input for categorization</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <typescript>
+        <package name="@types/node" version="latest">Type definitions for Node.js</package>
+      </typescript>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Categorization must handle all four scenarios: text-only, screenshot-only, hybrid, empty
+- Empty string after trim() is treated as no text
+- Empty array is treated as no images
+- At least one of text or images must exist (empty scenario triggers error in next story)
+- ContentPackage must include contentType field for LLM routing
+- Logging must comply with FR39 structured logging requirements
+- Return content package ready for LLM API integration
+- Maintain TypeScript strict mode
+- Co-locate tests with source (email-processor.test.ts)
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>categorizeContent</name>
+      <kind>Function signature</kind>
+      <signature>
+export function categorizeContent(text: string, images: EncodedImage[]): ContentPackage
+      </signature>
+      <path>src/services/email-processor.ts</path>
+    </interface>
+    <interface>
+      <name>ContentPackage</name>
+      <kind>TypeScript Interface</kind>
+      <signature>
+interface ContentPackage {
+  contentType: 'text-only' | 'screenshot-only' | 'hybrid' | 'empty';
+  text: string;
+  images: EncodedImage[];
+}
+      </signature>
+      <path>src/services/email-processor.ts</path>
+    </interface>
+    <interface>
+      <name>EncodedImage</name>
+      <kind>TypeScript Interface</kind>
+      <signature>
+interface EncodedImage {
+  filename: string;
+  contentType: string;
+  dataUrl: string;
+}
+      </signature>
+      <path>src/services/image-processor.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest for testing. Co-locate tests (email-processor.test.ts). Test all four content scenarios. Verify correct contentType assignment. Validate content packages for LLM API compatibility. Mock logger to verify structured logging format.
+    </standards>
+    <locations>
+src/**/*.test.ts (co-located with source files)
+    </locations>
+    <ideas>
+      <test acceptanceCriteriaId="AC1">
+        <description>Test categorizes text-only content correctly</description>
+        <approach>Provide non-empty text and empty images array, verify contentType is 'text-only'</approach>
+      </test>
+      <test acceptanceCriteriaId="AC2">
+        <description>Test categorizes screenshot-only content correctly</description>
+        <approach>Provide empty text and non-empty images array, verify contentType is 'screenshot-only'</approach>
+      </test>
+      <test acceptanceCriteriaId="AC3">
+        <description>Test categorizes hybrid content correctly</description>
+        <approach>Provide both text and images, verify contentType is 'hybrid'</approach>
+      </test>
+      <test acceptanceCriteriaId="AC4">
+        <description>Test categorizes empty content correctly</description>
+        <approach>Provide empty text and empty images, verify contentType is 'empty'</approach>
+      </test>
+      <test acceptanceCriteriaId="AC5">
+        <description>Test whitespace-only text treated as empty</description>
+        <approach>Provide text with only spaces/tabs and no images, verify contentType is 'empty'</approach>
+      </test>
+      <test acceptanceCriteriaId="AC6">
+        <description>Test content package includes correct fields</description>
+        <approach>Verify returned ContentPackage has contentType, text, images fields with correct values</approach>
+      </test>
+      <test acceptanceCriteriaId="AC7">
+        <description>Test structured logging format</description>
+        <approach>Mock logger, verify log includes contentType, hasText, hasImages, imageCount (if applicable)</approach>
+      </test>
+    </ideas>
+  </tests>
+</story-context>

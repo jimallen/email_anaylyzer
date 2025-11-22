@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<story-context id="epic-2-story-2.3" v="1.0">
+  <metadata>
+    <epicId>Epic 2</epicId>
+    <storyId>2.3</storyId>
+    <title>Implement Whitelist Validation Service</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-2-story-2.3.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system operator</asA>
+    <iWant>whitelist-based security to block unauthorized senders</iWant>
+    <soThat>only approved team members can use the service</soThat>
+    <tasks>Create src/services/whitelist.ts | Implement isWhitelisted function | Load whitelist from config | Check exact email match first | Check domain suffix match second | Return boolean result | Write comprehensive unit tests with vitest | Test exact matches, domain matches, subdomains, no matches</tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">Whitelist configuration loaded from config/whitelist.json</criterion>
+    <criterion id="2">Exact email match checked first against allowed_emails array</criterion>
+    <criterion id="3">Domain suffix match checked against allowed_domains array</criterion>
+    <criterion id="4">Subdomain matching works (e.g., user@sub.company.com matches @company.com)</criterion>
+    <criterion id="5">Returns boolean: true if whitelisted, false otherwise</criterion>
+    <criterion id="6">Function isWhitelisted(email: string): boolean encapsulates logic</criterion>
+    <criterion id="7">Unit tests cover all validation scenarios</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Security & Access Control</section>
+        <snippet>FR7-11: Whitelist validation, configuration loading, and hot-reload capability</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Security Architecture</section>
+        <snippet>Whitelist-Based Access Control: exact email match, then domain suffix match, stored in config/whitelist.json</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 2.3</section>
+        <snippet>Validate sender email against whitelist with exact match first, then domain suffix match. Case-insensitive matching recommended.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/services/config.ts</path>
+        <kind>service</kind>
+        <symbol>loadWhitelist</symbol>
+        <reason>Configuration system that loads whitelist.json</reason>
+      </artifact>
+      <artifact>
+        <path>src/lib/schemas.ts</path>
+        <kind>schema</kind>
+        <symbol>WhitelistSchema</symbol>
+        <reason>Zod schema for whitelist validation</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <ecosystem name="node">
+        <package name="zod" version="latest"/>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>Validation algorithm: exact email match first, then domain suffix match, then reject</constraint>
+    <constraint>Case-insensitive matching recommended for email addresses</constraint>
+    <constraint>Must support both allowed_emails and allowed_domains arrays</constraint>
+    <constraint>Domain format: "@company.com" for exact domain, supports subdomains</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>isWhitelisted</name>
+      <kind>function</kind>
+      <signature>function isWhitelisted(email: string): boolean</signature>
+      <path>src/services/whitelist.ts</path>
+    </interface>
+    <interface>
+      <name>WhitelistConfig</name>
+      <kind>interface</kind>
+      <signature>interface WhitelistConfig { allowed_emails: string[]; allowed_domains: string[]; }</signature>
+      <path>src/services/whitelist.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>Unit tests with vitest covering exact email matches, domain matches, subdomain matches, empty whitelist, case sensitivity, and no-match scenarios.</standards>
+    <locations>src/services/whitelist.test.ts</locations>
+    <ideas>
+      <idea id="1">Exact email match in allowed_emails returns true</idea>
+      <idea id="2">Domain suffix match in allowed_domains returns true</idea>
+      <idea id="3">Subdomain match (sub.company.com vs @company.com) returns true</idea>
+      <idea id="4">Email not in either array returns false</idea>
+      <idea id="5">Empty whitelist arrays return false for any email</idea>
+      <idea id="6">Case-insensitive matching normalized to lowercase</idea>
+      <idea id="7">Multiple domains in allowed_domains checked correctly</idea>
+      <idea id="8">Exact match takes priority over domain match</idea>
+    </ideas>
+  </tests>
+</story-context>

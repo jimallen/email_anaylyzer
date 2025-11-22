@@ -1,0 +1,84 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>5</epicId>
+    <storyId>5.2</storyId>
+    <title>Format Success Email Responses with Feedback</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-5-story-5.2.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>team member</asA>
+    <iWant>to receive AI feedback in a well-formatted email</iWant>
+    <soThat>I can easily read and act on the suggestions</soThat>
+    <tasks>
+      - Create src/services/email-formatter.ts
+      - Export formatSuccessEmail function
+      - Define EmailContent interface
+      - Implement subject line pattern: Re: ${originalSubject || 'Your email draft'}
+      - Build body template using template literals
+      - Preserve whitespace and line breaks in feedback
+      - Add static footer text
+      - Validate body length (log warning if > 10,000 chars)
+      - Handle edge cases (empty subject, multi-line feedback, special characters)
+      - Log formatted email metadata (without body content)
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    - Subject line follows pattern: Re: <original_subject>
+    - Email body is plain text with structured format (greeting, feedback, footer)
+    - LLM feedback text inserted verbatim (no modifications)
+    - Body length validated (log warning if > 10,000 chars)
+    - Edge cases handled (empty subject, multi-line feedback, special characters)
+    - Response formatting encapsulated in dedicated function
+    - Formatted email details logged without body content
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Response Generation (FR21-25)</section>
+        <snippet>FR22: System formats response with appropriate subject line (Re: original subject or custom format). FR23: System includes LLM-generated feedback in plain text format.</snippet>
+      </doc>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Email Response (Outbound via Resend Sending API)</section>
+        <snippet>From Address: Configured "no-reply" or service address. To Address: Original sender from inbound email. Subject: Re: original_subject or custom format. Body: Plain text feedback from LLM analysis.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Implementation Patterns - Data Format Patterns</section>
+        <snippet>API Requests (Resend Sending): { from: "analyzer@company.com", to: "sender@company.com", subject: "Re: Original Subject", text: "Feedback content..." }</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Implementation Patterns - Naming Patterns</section>
+        <snippet>Files: kebab-case for files (email-formatter.ts). Functions: camelCase (formatSuccessEmail). Constants: SCREAMING_SNAKE_CASE.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 5.2: Format Success Email Responses with Feedback</section>
+        <snippet>Create src/services/email-formatter.ts. Export formatSuccessEmail function. Subject pattern: Re: ${originalSubject || 'Your email draft'}. Body template with greeting, feedback, footer. Preserve whitespace and line breaks.</snippet>
+      </doc>
+    </docs>
+    <code>{{code_artifacts}}</code>
+    <dependencies>{{dependencies_artifacts}}</dependencies>
+  </artifacts>
+
+  <constraints>{{constraints}}</constraints>
+  <interfaces>{{interfaces}}</interfaces>
+  <tests>
+    <standards>{{test_standards}}</standards>
+    <locations>{{test_locations}}</locations>
+    <ideas>{{test_ideas}}</ideas>
+  </tests>
+</story-context>

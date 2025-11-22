@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<story-context id="epic-2-story-2.4" v="1.0">
+  <metadata>
+    <epicId>Epic 2</epicId>
+    <storyId>2.4</storyId>
+    <title>Implement Whitelist Hot-Reload Capability</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-2-story-2.4.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system operator</asA>
+    <iWant>whitelist changes to take effect within 60 seconds without restarting the service</iWant>
+    <soThat>I can quickly add or remove team members without downtime</soThat>
+    <tasks>Use fs.watch to monitor config/whitelist.json | Implement file change detection | Reload configuration on file change | Validate new config with zod | Apply changes to in-memory config | Gracefully handle invalid JSON | Log reload events | Debounce file changes to prevent duplicate reloads | Test hot-reload workflow</tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">fs.watch detects changes to config/whitelist.json within 60 seconds</criterion>
+    <criterion id="2">Configuration is reloaded from disk automatically</criterion>
+    <criterion id="3">New whitelist rules take effect immediately for subsequent requests</criterion>
+    <criterion id="4">Reload event is logged with configuration details</criterion>
+    <criterion id="5">Invalid JSON in updated file handled gracefully: previous config remains active</criterion>
+    <criterion id="6">Error is logged when invalid config detected</criterion>
+    <criterion id="7">Service continues running with old config if reload fails</criterion>
+    <criterion id="8">Hot-reload tested: add email to whitelist and verify it's accepted within 60s</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Security & Access Control</section>
+        <snippet>FR11: System allows whitelist updates without service redeployment</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Consistency Rules - Authentication Pattern</section>
+        <snippet>Hot-reload: Config changes detected within 60 seconds, fs.watch monitors for changes</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 2.4</section>
+        <snippet>Use fs.watch with debouncing (1 second after last change). Reload validates with zod. Store config in module-level variable.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>src/services/whitelist.ts</path>
+        <kind>service</kind>
+        <symbol>setupWhitelistWatch, reloadWhitelist</symbol>
+        <reason>Main service that needs hot-reload capability added</reason>
+      </artifact>
+      <artifact>
+        <path>src/services/config.ts</path>
+        <kind>service</kind>
+        <symbol>loadWhitelist</symbol>
+        <reason>Configuration loading to be called on file change</reason>
+      </artifact>
+      <artifact>
+        <path>src/lib/schemas.ts</path>
+        <kind>schema</kind>
+        <symbol>WhitelistSchema</symbol>
+        <reason>Zod schema for validating reloaded config</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <ecosystem name="node">
+        <package name="fs" version="built-in"/>
+        <package name="zod" version="latest"/>
+      </ecosystem>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>Use Node.js fs.watch API (built-in, no external dependencies)</constraint>
+    <constraint>Debounce file changes: wait 1 second after last change before reloading</constraint>
+    <constraint>Validate new config with zod schema before applying</constraint>
+    <constraint>Keep previous valid config if new config fails validation</constraint>
+    <constraint>Log all reload attempts with success/failure status</constraint>
+    <constraint>Whitelist stored in module-level variable shared across requests</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>setupWhitelistWatch</name>
+      <kind>function</kind>
+      <signature>function setupWhitelistWatch(configPath: string): void</signature>
+      <path>src/services/whitelist.ts</path>
+    </interface>
+    <interface>
+      <name>reloadWhitelist</name>
+      <kind>function</kind>
+      <signature>function reloadWhitelist(configPath: string): Promise&lt;boolean&gt;</signature>
+      <path>src/services/whitelist.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>Integration tests for hot-reload: start service, send blocked request, modify whitelist.json, wait 60s, resend request and verify it's allowed. Unit tests for validation error handling.</standards>
+    <locations>src/services/whitelist.test.ts</locations>
+    <ideas>
+      <idea id="1">fs.watch detects file change within expected timeframe</idea>
+      <idea id="2">Debounce prevents multiple reloads from rapid edits</idea>
+      <idea id="3">Valid config reloads successfully and takes effect</idea>
+      <idea id="4">Invalid JSON keeps previous config, logs error</idea>
+      <idea id="5">Zod validation catches malformed whitelist structure</idea>
+      <idea id="6">Reload event logged with email/domain counts</idea>
+      <idea id="7">Multiple rapid changes processed as single reload</idea>
+      <idea id="8">Integration test: add email, wait, verify acceptance</idea>
+    </ideas>
+  </tests>
+</story-context>

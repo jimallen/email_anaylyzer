@@ -1,0 +1,176 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>1.3</storyId>
+    <title>Implement Health Check Endpoint</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/home/jima/Code/email_anaylyzer/docs/sprint-artifacts/epic-1-story-1.3.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system operator</asA>
+    <iWant>a health check endpoint that reports service status and dependencies</iWant>
+    <soThat>I can monitor service health and integration with PM2 monitoring</soThat>
+    <tasks>
+- Create `src/routes/health.ts` as Fastify plugin
+- Register route in `src/app.ts`
+- Implement Fastify route handler pattern (GET /health)
+- Return JSON with status, uptime, timestamp, dependencies
+- Use process.uptime() for uptime calculation
+- Check if Sparky LLM URL is configured (not null/empty)
+- Check if Resend API key is configured (not null/empty)
+- Ensure response time is <100ms (no network calls)
+- No authentication required (public health check)
+- Consider adding Node.js version to response
+</tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** the service is running
+**When** I send `GET /health` request
+**Then** it returns HTTP 200 with JSON body:
+```json
+{
+  "status": "ok",
+  "uptime": 12345,
+  "timestamp": "2025-11-17T12:34:56.789Z",
+  "dependencies": {
+    "sparky": "ok",
+    "resend": "ok"
+  }
+}
+```
+
+**And** uptime is in seconds (process.uptime())
+
+**And** timestamp is ISO 8601 format (UTC)
+
+**And** dependency checks perform lightweight validation:
+- sparky: URL is configured (not null/empty)
+- resend: API key is configured (not null/empty)
+
+**And** response time is <100ms (no network calls, just config checks)
+
+**And** endpoint does not require authentication (public health check)
+</acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <!-- Relevant Documentation Artifacts -->
+      <artifact>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Service Operations (FR47-50)</section>
+        <snippet>FR50: System provides health check endpoint for monitoring service status. The health check should return service status and dependency health for PM2 monitoring and load balancer checks.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Project Structure - Health Check</section>
+        <snippet>Health check endpoint: GET /health returns { status: 'ok', uptime: 12345, dependencies: { sparky: 'ok', resend: 'ok' } }. Used for PM2 monitoring and load balancer checks.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>API Contracts</section>
+        <snippet>GET /health endpoint returns JSON: { status: "ok", uptime: 12345, timestamp: ISO8601, dependencies: { sparky: "ok", resend: "ok" } }. Lightweight validation only - check if config values exist.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Implementation Patterns - File Organization</section>
+        <snippet>Route files: One route per file in routes/. Export Fastify plugin: export default async function healthRoute(fastify: FastifyInstance) {}. Register in app.ts. Use kebab-case for files.</snippet>
+      </artifact>
+      <artifact>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 1.3 Details</section>
+        <snippet>Prerequisites: Story 1.2 (configuration system exists). Technical Notes: Create src/routes/health.ts as Fastify plugin, register in src/app.ts, no external HTTP calls - just check if config values exist.</snippet>
+      </artifact>
+    </docs>
+    <code>
+      <!-- Existing Code and Interfaces -->
+      <!-- Note: Project is greenfield - no existing code found in src/ directory -->
+      <!-- This story requires Story 1.1 (project initialization) and 1.2 (config system) to be completed first -->
+    </code>
+    <dependencies>
+      <node>
+        <fastify>latest - Web framework for routes and plugins</fastify>
+        <dotenv>latest - Environment variable loading for config</dotenv>
+        <zod>latest - Schema validation for config</zod>
+        <vitest>latest (dev) - Testing framework</vitest>
+        <typescript>latest - Language support</typescript>
+        <pino>Fastify default - Structured logging</pino>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- MUST follow Fastify plugin architecture pattern (export default async function)
+- MUST use kebab-case for file naming (health.ts)
+- MUST register route in src/app.ts
+- MUST NOT make external HTTP calls (lightweight config checks only)
+- MUST NOT require authentication (public endpoint)
+- MUST return ISO 8601 timestamp in UTC
+- MUST use process.uptime() for uptime in seconds
+- MUST check config values exist (not null/empty) without actual network validation
+- MUST complete response in <100ms
+- MUST return HTTP 200 status
+- MUST use TypeScript with strict mode
+- MUST follow architecture patterns defined in architecture.md
+</constraints>
+
+  <interfaces>
+- Health Check Response JSON:
+  ```typescript
+  interface HealthResponse {
+    status: 'ok';
+    uptime: number; // seconds from process.uptime()
+    timestamp: string; // ISO 8601 UTC
+    dependencies: {
+      sparky: 'ok' | 'error';
+      resend: 'ok' | 'error';
+    };
+  }
+  ```
+
+- Fastify Plugin Pattern:
+  ```typescript
+  import type { FastifyInstance } from 'fastify';
+  export default async function healthRoute(fastify: FastifyInstance) {
+    fastify.get('/health', async (request, reply) => {
+      // implementation
+    });
+  }
+  ```
+
+- Configuration Service (from Story 1.2):
+  - Provides: SPARKY_LLM_URL (env var)
+  - Provides: RESEND_API_KEY (env var)
+  - Must check if these values are configured (not null/empty)
+</interfaces>
+
+  <tests>
+    <standards>Use vitest as testing framework. Tests should be co-located with source files (health.test.ts next to health.ts). Follow describe/it pattern with clear test descriptions. Mock dependencies and config for unit tests. Test all acceptance criteria including status code, response structure, timing constraints, and error scenarios.</standards>
+    <locations>
+- src/routes/health.test.ts (unit tests for route handler)
+- src/__tests__/health.test.ts (integration tests if needed)
+</locations>
+    <ideas>
+- Test: GET /health returns 200 status code
+- Test: Response includes all required fields (status, uptime, timestamp, dependencies)
+- Test: Status is always "ok"
+- Test: Uptime is a positive number from process.uptime()
+- Test: Timestamp is valid ISO 8601 format
+- Test: Dependencies.sparky is "ok" when SPARKY_LLM_URL is configured
+- Test: Dependencies.sparky is "error" when SPARKY_LLM_URL is null/empty
+- Test: Dependencies.resend is "ok" when RESEND_API_KEY is configured
+- Test: Dependencies.resend is "error" when RESEND_API_KEY is null/empty
+- Test: Response time is <100ms (no external calls)
+- Test: Endpoint does not require authentication
+- Test: Timestamp timezone is UTC
+</ideas>
+  </tests>
+</story-context>

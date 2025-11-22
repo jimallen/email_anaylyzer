@@ -1,0 +1,132 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>5</epicId>
+    <storyId>5.1</storyId>
+    <title>Implement Resend Email Sending Client</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/home/jima/Code/email_anaylyzer/docs/sprint-artifacts/epic-5-story-5.1.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer</asA>
+    <iWant>a Resend API client for sending email responses</iWant>
+    <soThat>feedback can be delivered to users programmatically</soThat>
+    <tasks>
+- Create `src/services/resend-client.ts`
+- Export function: `sendEmail(to: string, subject: string, body: string): Promise<EmailResult>`
+- Type definition with EmailResult interface (success, emailId, error fields)
+- Use native fetch (Node 25 built-in)
+- Load API key from environment: `process.env.RESEND_API_KEY`
+- Load from address from config (default: "Email Analyzer &lt;noreply@yourdomain.com&gt;")
+- Timeout pattern with AbortController (similar to LLM API)
+- Track timing with Date.now()
+- Handle Resend API errors (4xx, 5xx) with proper error messages
+- Don't log email body content - only metadata (to, subject, result)</tasks>
+  </story>
+
+  <acceptanceCriteria>
+AC1: HTTP POST request is made to Resend's sending endpoint
+AC2: Request uses native fetch with proper headers (Authorization Bearer, Content-Type)
+AC3: Timeout: 10 seconds (from config: resend_timeout_ms)
+AC4: Request body includes from, to, subject, text fields
+AC5: Successful send (HTTP 200/201) returns response with email ID
+AC6: Send timing is tracked and logged with to, emailId, duration
+AC7: If send fails (timeout, network error, HTTP error), error is caught, logged with details, and re-thrown
+AC8: Timeout is enforced using AbortController (10 seconds)
+AC9: From address is configurable (from config or environment variable)</acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Response Generation (FR21-25)</section>
+        <snippet>FR21: System sends email response to original sender via Resend sending API. FR25: System retries failed email sends once before logging permanent failure.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Integration Points - Resend Sending API</section>
+        <snippet>Endpoint: Resend REST API POST /emails. Authentication: API key (RESEND_API_KEY env var). Timeout: 10 seconds. Payload: From, to, subject, text body. Response: JSON with email ID. Retry: Once on failure (1 second delay).</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Communication Patterns</section>
+        <snippet>HTTP Timeouts: Resend API: 10 seconds. Retry Logic: Email send failure: Retry once after 1 second.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 5.1 Technical Notes</section>
+        <snippet>Use native fetch (Node 25 built-in). Load API key from environment: process.env.RESEND_API_KEY. Load from address from config. Timeout pattern with AbortController. Track timing: const start = Date.now(); const duration = Date.now() - start. Handle Resend API errors (4xx, 5xx). Don't log email body content - only metadata.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <!-- No existing code - greenfield project, this is the first Resend client implementation -->
+    </code>
+    <dependencies>
+      <node>
+        <package>Node.js</package>
+        <version>25.1.0</version>
+        <note>Native fetch built-in</note>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Use native fetch (Node 25 built-in) - no external HTTP libraries
+- Timeout must be exactly 10 seconds using AbortController pattern
+- API key loaded from environment variable (RESEND_API_KEY)
+- From address should be configurable via config system
+- Error handling must catch timeout, network, and HTTP errors separately
+- Logging must NOT include email body content - only metadata (to, subject, result)
+- Must follow kebab-case naming convention: resend-client.ts
+- TypeScript strict mode enabled - full type safety required
+- Function signature: sendEmail(to: string, subject: string, body: string): Promise&lt;EmailResult&gt;
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>EmailResult</name>
+      <kind>TypeScript interface</kind>
+      <signature>
+interface EmailResult {
+  success: boolean;
+  emailId?: string;
+  error?: string;
+}
+      </signature>
+      <path>src/services/resend-client.ts</path>
+    </interface>
+    <interface>
+      <name>Resend API - Send Email</name>
+      <kind>REST endpoint</kind>
+      <signature>
+POST https://api.resend.com/emails
+Headers: { 'Authorization': 'Bearer &lt;RESEND_API_KEY&gt;', 'Content-Type': 'application/json' }
+Body: { "from": string, "to": string, "subject": string, "text": string }
+Response: { "id": string } (HTTP 200/201)
+      </signature>
+      <path>External API</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>Testing framework: vitest. Test files co-located with source (*.test.ts). Unit tests for all service functions. Integration tests for API endpoints. Error handling validation required.</standards>
+    <locations>src/services/*.test.ts</locations>
+    <ideas>
+- Test successful email send with mock fetch returning 200
+- Test timeout scenario using AbortController abort
+- Test network error handling (fetch throws)
+- Test HTTP 4xx error (e.g., 400 Bad Request)
+- Test HTTP 5xx error (e.g., 503 Service Unavailable)
+- Test that timing is tracked correctly
+- Test that email body is NOT logged
+- Test that from address is loaded from config
+- Test EmailResult structure for success and failure cases
+    </ideas>
+  </tests>
+</story-context>

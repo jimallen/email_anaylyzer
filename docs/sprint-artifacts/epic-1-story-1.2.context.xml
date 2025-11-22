@@ -1,0 +1,212 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>1</epicId>
+    <storyId>1.2</storyId>
+    <title>Implement Configuration Management System</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/home/jima/Code/email_anaylyzer/docs/sprint-artifacts/epic-1-story-1.2.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system operator</asA>
+    <iWant>a configuration system that loads settings from files and environment variables</iWant>
+    <soThat>I can change configuration without code changes and support multiple environments</soThat>
+    <tasks>
+- Create `src/services/config.ts` module
+- Export typed configuration object (use zod for runtime validation)
+- Create TypeScript interfaces for config structure
+- Create `config/` directory with initial JSON files
+- Set file permissions on config files: 600 (read/write owner only)
+- Load dotenv at application startup (top of src/server.ts)
+- Create `.env.example` file documenting all required environment variables
+- Implement configuration validation using zod schemas
+- Add error handling for missing/invalid config with clear messages
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** the Fastify project is initialized
+**When** the service starts
+**Then** it loads environment variables from `.env` file using dotenv
+
+**And** it loads JSON configuration from `config/` directory:
+- `config/whitelist.json` (email/domain whitelist)
+- `config/settings.json` (timeouts, limits, templates)
+
+**And** configuration includes these settings:
+- RESEND_API_KEY (env var)
+- SPARKY_LLM_URL (env var, default: `https://sparky.tail468b81.ts.net/v1/chat/completions`)
+- NODE_ENV (env var, default: `production`)
+- PORT (env var, default: `3000`)
+- llm_timeout_ms (settings.json, default: 25000)
+- max_tokens (settings.json, default: 1000)
+- max_image_size_bytes (settings.json, default: 10485760)
+- resend_timeout_ms (settings.json, default: 10000)
+- image_download_timeout_ms (settings.json, default: 10000)
+
+**And** configuration validation occurs on startup using zod schemas
+
+**And** startup fails with clear error message if required config is missing
+
+**And** `.env.example` file documents all required environment variables
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/prd.md</path>
+        <title>Product Requirements Document</title>
+        <section>Configuration Management (FR40-46)</section>
+        <snippet>FR40: System reads configuration from file without requiring code changes. FR41: System supports environment-specific configuration (dev/staging/prod). FR42: System configures Resend API credentials via config. FR43: System configures sparky LLM API endpoint URL via config.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Technology Stack Details - Configuration</section>
+        <snippet>dotenv - Environment variable loading. zod - Schema validation (webhooks, config). Configuration: All environment-specific values externalized to config (no hardcoded URLs/credentials). Configuration validation occurs on service startup with clear error messages.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Project Structure - services/config.ts</section>
+        <snippet>src/services/config.ts - Config loading & hot-reload (FR40-46). Configuration files: config/whitelist.json, config/settings.json. Environment variables: .env file with RESEND_API_KEY, SPARKY_LLM_URL, NODE_ENV, PORT.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Data Format Patterns - Config Files (JSON)</section>
+        <snippet>JSON configuration format with snake_case keys: allowed_emails, allowed_domains, llm_timeout_ms, max_tokens, max_image_size_bytes. Environment variables in .env: RESEND_API_KEY, SPARKY_LLM_URL, NODE_ENV, PORT.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Epic 1: Service Foundation & Core Infrastructure - Story 1.2</section>
+        <snippet>Story 1.2: Implement Configuration Management System. Create configuration system that loads settings from files and environment variables. Config loading pattern: env vars override file values where applicable. Validation errors should log specific missing/invalid fields.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <!-- No existing code - greenfield project -->
+    </code>
+    <dependencies>
+      <node>
+        <dependency>
+          <name>dotenv</name>
+          <version>latest</version>
+          <purpose>Load environment variables from .env file</purpose>
+        </dependency>
+        <dependency>
+          <name>zod</name>
+          <version>latest</version>
+          <purpose>Runtime schema validation for configuration</purpose>
+        </dependency>
+        <dependency>
+          <name>fastify</name>
+          <version>latest</version>
+          <purpose>Web framework - configuration will be used throughout</purpose>
+        </dependency>
+        <dependency>
+          <name>typescript</name>
+          <version>latest</version>
+          <purpose>Type safety for configuration interfaces</purpose>
+        </dependency>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Must use zod for runtime validation of configuration values
+- Must load dotenv at application startup (top of src/server.ts)
+- Environment variables override file values where applicable
+- Config files must have restricted permissions (600 - read/write owner only)
+- Validation errors must log specific missing/invalid fields
+- Configuration must be type-safe using TypeScript interfaces
+- Must support environment-specific configuration (dev/staging/prod)
+- Required environment variables: RESEND_API_KEY (no default)
+- Optional environment variables with defaults: SPARKY_LLM_URL, NODE_ENV, PORT
+- JSON config files use snake_case naming convention
+- File naming: kebab-case (config.ts, not Config.ts)
+- Service startup must fail fast with clear error if config invalid
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>Config Object Export</name>
+      <kind>Module export</kind>
+      <signature>
+export const config: {
+  // Environment variables
+  resendApiKey: string;
+  sparkyLlmUrl: string;
+  nodeEnv: string;
+  port: number;
+  // Settings from JSON
+  llmTimeoutMs: number;
+  maxTokens: number;
+  maxImageSizeBytes: number;
+  resendTimeoutMs: number;
+  imageDownloadTimeoutMs: number;
+  // Whitelist from JSON
+  whitelist: {
+    allowedEmails: string[];
+    allowedDomains: string[];
+  };
+};
+      </signature>
+      <path>src/services/config.ts</path>
+    </interface>
+    <interface>
+      <name>Zod Schema Validation</name>
+      <kind>Validation schema</kind>
+      <signature>
+const EnvSchema = z.object({
+  RESEND_API_KEY: z.string().min(1),
+  SPARKY_LLM_URL: z.string().url().default('https://sparky.tail468b81.ts.net/v1/chat/completions'),
+  NODE_ENV: z.enum(['development', 'staging', 'production']).default('production'),
+  PORT: z.coerce.number().default(3000)
+});
+
+const SettingsSchema = z.object({
+  llm_timeout_ms: z.number().default(25000),
+  max_tokens: z.number().default(1000),
+  max_image_size_bytes: z.number().default(10485760),
+  resend_timeout_ms: z.number().default(10000),
+  image_download_timeout_ms: z.number().default(10000)
+});
+
+const WhitelistSchema = z.object({
+  allowed_emails: z.array(z.string().email()).default([]),
+  allowed_domains: z.array(z.string()).default([])
+});
+      </signature>
+      <path>src/services/config.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest as testing framework. All service modules should have co-located test files (*.test.ts). Test coverage target: 80%+ for critical paths. Unit tests should validate configuration loading, schema validation, defaults, and error handling.
+    </standards>
+    <locations>
+- src/services/config.test.ts (co-located with config.ts)
+- Test files use pattern: *.test.ts
+    </locations>
+    <ideas>
+- AC1: Test environment variables load correctly from .env file
+- AC2: Test JSON config files load from config/ directory (whitelist.json, settings.json)
+- AC3: Test all configuration values are present with correct defaults
+- AC4: Test zod validation catches missing required fields (RESEND_API_KEY)
+- AC5: Test zod validation catches invalid formats (invalid URL, invalid email)
+- AC6: Test startup fails with clear error message when config invalid
+- AC7: Test .env.example exists and documents all environment variables
+- Unit test: config loading with valid environment variables
+- Unit test: config loading with missing RESEND_API_KEY throws error
+- Unit test: default values applied when optional env vars missing
+- Unit test: JSON file parsing for whitelist.json and settings.json
+- Unit test: zod validation with valid config passes
+- Unit test: zod validation with invalid config throws descriptive error
+- Unit test: file permissions check for config files (optional security test)
+    </ideas>
+  </tests>
+</story-context>

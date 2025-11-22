@@ -1,0 +1,211 @@
+<story-context id=".bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>4</epicId>
+    <storyId>4.4</storyId>
+    <title>Implement Comprehensive Error Handling for LLM Failures</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/epic-4-story-4.4.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>team member</asA>
+    <iWant>graceful handling of LLM API failures</iWant>
+    <soThat>I receive a helpful error message even when the AI is unavailable</soThat>
+    <tasks>
+- Create `src/lib/errors.ts` for error classes
+- Define `LLMError` class extending Error
+- Define error codes: LLM_TIMEOUT, LLM_NETWORK_ERROR, LLM_HTTP_ERROR, LLM_INVALID_RESPONSE
+- Update `src/services/llm-client.ts` to wrap all fetch errors in try/catch
+- Re-throw errors as LLMError with appropriate code and user-friendly message
+- Log technical details before re-throwing
+- Ensure errors are structured for Epic 5 webhook handler to catch
+- User messages should be non-technical and actionable
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+**Given** LLM API call encounters an error
+**When** handling different failure scenarios
+**Then** appropriate errors created for:
+- Timeout (>25s): LLM_TIMEOUT with user message about retrying
+- Network Error: LLM_NETWORK_ERROR with reach failure message
+- HTTP Error (4xx/5xx): LLM_HTTP_ERROR with service error message
+- Invalid Response: LLM_INVALID_RESPONSE with unexpected response message
+
+**And** errors structured as LLMError class with code, userMessage, details
+**And** all errors logged with full context (errorCode, duration, sender, contentType)
+**And** errors do NOT crash service - caught in webhook handler
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Error Handling Strategy - LLM API Failures</section>
+        <snippet>
+LLM API Failures (FR26-27):
+- Timeout (>25s) → Send fallback email with retry instructions
+- API down → Send fallback email: "Analysis service temporarily unavailable"
+- Continue processing other requests (NFR-R5)
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Error Format Patterns - Thrown Errors</section>
+        <snippet>
+```typescript
+class WhitelistError extends Error {
+  constructor(email: string) {
+    super(`Email not whitelisted: ${email}`);
+    this.name = 'WhitelistError';
+  }
+}
+```
+        </snippet>
+      </doc>
+      <doc>
+        <path>docs/epics.md</path>
+        <title>Epic Breakdown</title>
+        <section>Story 3.6 - ContentProcessingError pattern</section>
+        <snippet>
+Define custom error types:
+```typescript
+export class ContentProcessingError extends Error {
+  constructor(
+    public code: string,
+    public userMessage: string,
+    public details: Record<string, unknown>
+  ) {
+    super(userMessage);
+    this.name = 'ContentProcessingError';
+  }
+}
+```
+        </snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <expected>
+        <file>
+          <path>src/lib/errors.ts</path>
+          <kind>types/errors</kind>
+          <symbol>LLMError</symbol>
+          <reason>New error class to implement for LLM failures. Similar to ContentProcessingError from Epic 3</reason>
+        </file>
+        <file>
+          <path>src/services/llm-client.ts</path>
+          <kind>service</kind>
+          <symbol>callLLMAPI</symbol>
+          <reason>Update to wrap errors in LLMError and re-throw</reason>
+        </file>
+        <file>
+          <path>src/services/llm-client.ts</path>
+          <kind>service</kind>
+          <symbol>parseLLMResponse</symbol>
+          <reason>Update to throw LLMError on invalid response structure</reason>
+        </file>
+      </expected>
+    </code>
+
+    <dependencies>
+      <node>
+        <package>typescript</package>
+        <version>latest</version>
+        <usage>Custom error class with typed properties</usage>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+- Error codes must be SCREAMING_SNAKE_CASE constants
+- User messages must be non-technical and actionable ("try again")
+- Never expose internal details in user messages (no stack traces, URLs, codes)
+- Log technical details separately before re-throwing
+- LLMError must extend Error with name property set
+- Error details should be Record<string, unknown> for flexibility
+- Webhook handler (Epic 5) relies on LLMError type for error email routing
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>LLMError</name>
+      <kind>TypeScript class</kind>
+      <signature>
+```typescript
+export class LLMError extends Error {
+  constructor(
+    public code: string,
+    public userMessage: string,
+    public details: Record<string, unknown>
+  ) {
+    super(userMessage);
+    this.name = 'LLMError';
+  }
+}
+```
+      </signature>
+      <path>src/lib/errors.ts</path>
+    </interface>
+    <interface>
+      <name>Error Codes</name>
+      <kind>Constants</kind>
+      <signature>
+```typescript
+export const LLM_ERROR_CODES = {
+  TIMEOUT: 'LLM_TIMEOUT',
+  NETWORK_ERROR: 'LLM_NETWORK_ERROR',
+  HTTP_ERROR: 'LLM_HTTP_ERROR',
+  INVALID_RESPONSE: 'LLM_INVALID_RESPONSE'
+} as const;
+```
+      </signature>
+      <path>src/lib/errors.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+Use vitest testing framework. Test error creation and structure. Verify error messages are user-friendly. Test error catching and re-throwing in llm-client. Mock different failure scenarios.
+    </standards>
+    <locations>
+src/lib/errors.test.ts
+src/services/llm-client.test.ts
+    </locations>
+    <ideas>
+**Test Case 1: Timeout error creation**
+- Given: AbortController abort occurs
+- When: Error wrapped in LLMError
+- Then: Code is LLM_TIMEOUT, userMessage is actionable, details contain duration
+
+**Test Case 2: Network error creation**
+- Given: Fetch throws network error
+- When: Error wrapped in LLMError
+- Then: Code is LLM_NETWORK_ERROR, userMessage mentions service unreachable
+
+**Test Case 3: HTTP error creation**
+- Given: Fetch returns 500 status
+- When: Error wrapped in LLMError
+- Then: Code is LLM_HTTP_ERROR, details contain statusCode and body
+
+**Test Case 4: Invalid response error**
+- Given: Response doesn't match schema
+- When: parseLLMResponse throws
+- Then: Code is LLM_INVALID_RESPONSE, details contain validation error
+
+**Test Case 5: Error logging before re-throw**
+- Given: Any LLM error occurs
+- When: Error is wrapped and re-thrown
+- Then: Technical details logged before throw (not after)
+
+**Test Case 6: Error doesn't crash service**
+- Given: LLM API fails
+- When: callLLMAPI throws LLMError
+- Then: Error can be caught by caller (webhook handler)
+    </ideas>
+  </tests>
+</story-context>
