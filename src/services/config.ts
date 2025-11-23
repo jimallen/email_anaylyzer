@@ -19,6 +19,7 @@ const SettingsSchema = z.object({
   max_image_size_bytes: z.number().positive('max_image_size_bytes must be positive').default(10485760),
   resend_timeout_ms: z.number().positive('resend_timeout_ms must be positive').default(10000),
   image_download_timeout_ms: z.number().positive('image_download_timeout_ms must be positive').default(10000),
+  include_pdf_attachment: z.boolean().default(false),
 });
 
 // Whitelist JSON schema
@@ -40,6 +41,7 @@ export type Config = {
   maxImageSizeBytes: number;
   resendTimeoutMs: number;
   imageDownloadTimeoutMs: number;
+  includePdfAttachment: boolean;
   whitelist: {
     allowedEmails: string[];
     allowedDomains: string[];
@@ -111,6 +113,7 @@ function loadConfig(): Config {
       maxImageSizeBytes: settings.max_image_size_bytes,
       resendTimeoutMs: settings.resend_timeout_ms,
       imageDownloadTimeoutMs: settings.image_download_timeout_ms,
+      includePdfAttachment: settings.include_pdf_attachment,
       whitelist: {
         allowedEmails: whitelist.allowed_emails,
         allowedDomains: whitelist.allowed_domains,

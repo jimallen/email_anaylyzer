@@ -24,6 +24,14 @@ export interface EmailConfig {
 }
 
 /**
+ * Email attachment for Resend API
+ */
+interface ResendAttachment {
+  filename: string;
+  content: string; // base64 encoded
+}
+
+/**
  * Resend API request body
  */
 interface ResendEmailRequest {
@@ -31,6 +39,7 @@ interface ResendEmailRequest {
   to: string;
   subject: string;
   text: string;
+  attachments?: ResendAttachment[];
 }
 
 /**
@@ -50,6 +59,7 @@ interface ResendSuccessResponse {
  * @param subject - Email subject line
  * @param body - Email body text content
  * @param config - Email configuration (API key, timeout, from address)
+ * @param attachments - Optional email attachments (base64 encoded)
  * @param logger - Optional Fastify logger for tracking
  * @returns Promise resolving to EmailResult with success status and email ID or error
  */
@@ -100,6 +110,7 @@ export async function sendEmail(
   subject: string,
   body: string,
   config: EmailConfig,
+  attachments?: ResendAttachment[],
   logger?: FastifyBaseLogger
 ): Promise<EmailResult> {
   // Track timing
@@ -115,6 +126,11 @@ export async function sendEmail(
     subject,
     text: body,
   };
+
+  // Add attachments if provided
+  if (attachments && attachments.length > 0) {
+    requestBody.attachments = attachments;
+  }
 
   // Create AbortController for timeout
   const controller = new AbortController();
@@ -236,6 +252,7 @@ export async function sendEmail(
  * @param subject - Email subject line
  * @param body - Email body text content
  * @param config - Email configuration (API key, timeout, from address)
+ * @param attachments - Optional email attachments (base64 encoded)
  * @param logger - Optional Fastify logger for tracking
  * @returns Promise resolving to EmailResult with success status
  */
@@ -244,12 +261,13 @@ export async function sendEmailWithRetry(
   subject: string,
   body: string,
   config: EmailConfig,
+  attachments?: ResendAttachment[],
   logger?: FastifyBaseLogger
 ): Promise<EmailResult> {
   const overallStartTime = Date.now();
 
   // Attempt 1: Initial send
-  const firstResult = await sendEmail(to, subject, body, config, logger);
+  const firstResult = await sendEmail(to, subject, body, config, attachments, logger);
 
   if (firstResult.success) {
     return firstResult;
@@ -275,7 +293,7 @@ export async function sendEmailWithRetry(
   await sleep(1000);
 
   // Attempt 2: Retry
-  const retryResult = await sendEmail(to, subject, body, config, logger);
+  const retryResult = await sendEmail(to, subject, body, config, attachments, logger);
 
   if (retryResult.success) {
     // Retry succeeded

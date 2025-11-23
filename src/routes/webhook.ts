@@ -17,6 +17,7 @@ import {
   formatLLMRequest,
   callLLMAPI,
   parseLLMResponse,
+  parseSenderNameWithLLM,
 } from '../services/llm-client';
 import {
   formatSuccessEmail,
@@ -259,6 +260,25 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         successRate: `${Math.round((downloadedImages.length / attachments.length) * 100)}%`
       }, 'Image/PDF download complete');
 
+      // Step 3.4: Keep original PDFs for response attachment (if enabled)
+      const pdfAttachments = config.includePdfAttachment
+        ? downloadedImages
+            .filter(img => {
+              const attachment = attachments.find(a => a.filename === img.filename);
+              return attachment?.contentType === 'application/pdf';
+            })
+            .map(pdf => ({
+              filename: pdf.filename,
+              content: pdf.data.toString('base64')
+            }))
+        : [];
+
+      request.log.info({
+        includePdfAttachment: config.includePdfAttachment,
+        pdfCount: pdfAttachments.length,
+        pdfFilenames: pdfAttachments.map(p => p.filename)
+      }, 'Captured PDFs for response attachment');
+
       // Step 3.5: Process attachments (convert PDFs to images)
       request.log.info({
         downloadedCount: downloadedImages.length
@@ -408,7 +428,28 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
 
       // ===== Epic 4: LLM Analysis =====
 
-      // Step 1: Configure LLM
+      // Step 1: Build email context for personalization
+      // Use LLM to intelligently parse sender's name
+      const senderName = await parseSenderNameWithLLM(
+        payload.from,
+        config.sparkyLlmUrl,
+        config.llmModel,
+        request.log
+      );
+
+      const emailContext = {
+        senderName,
+        senderEmail: payload.from,
+        subject: payload.subject || 'Email Campaign'
+      };
+
+      request.log.info({
+        senderEmail: payload.from,
+        parsedName: senderName,
+        subject: payload.subject
+      }, 'Built email context for personalized analysis');
+
+      // Step 2: Configure LLM
       const llmConfig = {
         apiUrl: config.sparkyLlmUrl,
         model: config.llmModel,
@@ -416,23 +457,28 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         timeoutMs: config.llmTimeoutMs,
       };
 
-      // Step 2: Format LLM request
+      // Step 3: Format LLM request with email context
       const llmRequest = formatLLMRequest(
         contentPackage,
+        emailContext,
         llmConfig,
         request.log
       );
 
-      // Step 3: Call LLM API
+      // Step 4: Call LLM API and track processing time
+      const llmStartTime = Date.now();
       const llmResponse = await callLLMAPI(llmRequest, config.sparkyLlmUrl, config.llmTimeoutMs, request.log);
+      const llmProcessingTime = Date.now() - llmStartTime;
 
-      // Step 4: Parse LLM response
-      const feedback = parseLLMResponse(llmResponse, request.log);
+      // Step 5: Parse LLM response and extract metadata
+      const llmResult = parseLLMResponse(llmResponse, llmProcessingTime, request.log);
 
       request.log.info(
         {
-          feedbackLength: feedback.length,
-          feedbackPreview: feedback.substring(0, 200)
+          feedbackLength: llmResult.feedback.length,
+          feedbackPreview: llmResult.feedback.substring(0, 200),
+          processingTimeMs: llmResult.processingTimeMs,
+          tokensUsed: llmResult.tokensUsed
         },
         'LLM analysis completed'
       );
@@ -443,13 +489,19 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
       request.log.info({
         recipientEmail: payload.from,
         originalSubject: payload.subject,
-        feedbackLength: feedback.length
+        feedbackLength: llmResult.feedback.length,
+        processingTimeMs: llmResult.processingTimeMs,
+        tokensUsed: llmResult.tokensUsed
       }, 'Formatting success email');
 
       const emailContent = formatSuccessEmail(
         payload.from,
         payload.subject,
-        feedback,
+        llmResult.feedback,
+        senderName,
+        pdfAttachments,
+        llmResult.processingTimeMs,
+        llmResult.tokensUsed,
         request.log
       );
 
@@ -478,6 +530,7 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         emailContent.subject,
         emailContent.body,
         emailConfig,
+        emailContent.attachments,
         request.log
       );
 
@@ -564,6 +617,7 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
           errorEmail.subject,
           errorEmail.body,
           emailConfig,
+          undefined, // No attachments for error emails
           request.log
         );
 
