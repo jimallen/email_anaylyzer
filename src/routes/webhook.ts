@@ -14,10 +14,9 @@ import {
   encodeImages,
 } from '../services/image-processor';
 import {
-  formatLLMRequest,
-  callLLMAPI,
-  parseLLMResponse,
   parseSenderNameWithLLM,
+  detectLanguageWithLLM,
+  callClaudeForAnalysis,
 } from '../services/llm-client';
 import {
   formatSuccessEmail,
@@ -457,30 +456,35 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         timeoutMs: config.llmTimeoutMs,
       };
 
-      // Step 3: Format LLM request with email context
-      const llmRequest = formatLLMRequest(
-        contentPackage,
-        emailContext,
+      // Step 3: Detect language with LLM
+      const detectedLanguage = await detectLanguageWithLLM(
+        payload.subject,
+        contentPackage.text,
+        config.sparkyLlmUrl,
         llmConfig,
+        config.llmTimeoutMs,
         request.log
       );
 
-      // Step 4: Call LLM API and track processing time
-      const llmStartTime = Date.now();
-      const llmResponse = await callLLMAPI(llmRequest, config.sparkyLlmUrl, config.llmTimeoutMs, request.log);
-      const llmProcessingTime = Date.now() - llmStartTime;
+      request.log.info({ detectedLanguage, subject: payload.subject }, 'Language detected with LLM');
 
-      // Step 5: Parse LLM response and extract metadata
-      const llmResult = parseLLMResponse(llmResponse, llmProcessingTime, request.log);
+      // Step 4: Call Claude via Langchain for email analysis
+      const llmResult = await callClaudeForAnalysis(
+        contentPackage,
+        emailContext,
+        detectedLanguage,
+        llmConfig.maxTokens,
+        request.log
+      );
 
       request.log.info(
         {
           feedbackLength: llmResult.feedback.length,
           feedbackPreview: llmResult.feedback.substring(0, 200),
           processingTimeMs: llmResult.processingTimeMs,
-          tokensUsed: llmResult.tokensUsed
+          model: 'claude-sonnet-4-20250514'
         },
-        'LLM analysis completed'
+        'Claude analysis completed via Langchain'
       );
 
       // ===== Epic 5: Response Delivery =====

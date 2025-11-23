@@ -1,6 +1,9 @@
 import type { ContentPackage } from './email-processor';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
+import { ChatAnthropic } from '@langchain/anthropic';
+import { ChatOpenAI } from '@langchain/openai';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import {
   createLLMTimeoutError,
   createLLMNetworkError,
@@ -37,9 +40,9 @@ export interface ImageContent {
 export type ContentItem = TextContent | ImageContent;
 
 /**
- * System message for LLM request
+ * System message for LLM request (OpenAI format)
  */
-export interface SystemMessage {
+export interface LLMSystemMessage {
   role: 'system';
   content: string;
 }
@@ -55,7 +58,7 @@ export interface UserMessage {
 /**
  * LLM API request message (system or user)
  */
-export type LLMMessage = SystemMessage | UserMessage;
+export type LLMMessage = LLMSystemMessage | UserMessage;
 
 /**
  * LLM API request body
@@ -85,20 +88,7 @@ export interface EmailContext {
 }
 
 /**
- * Simple LLM request for name parsing (text-only, no images)
- */
-interface NameParsingRequest {
-  model: string;
-  messages: Array<{
-    role: 'system' | 'user';
-    content: string;
-  }>;
-  max_tokens: number;
-  temperature: number;
-}
-
-/**
- * Parse sender's name using LLM API
+ * Parse sender's name using LLM via Langchain
  *
  * Makes a quick LLM API call to intelligently extract a person's name
  * from an email address. Falls back to simple parsing on error.
@@ -116,41 +106,31 @@ export async function parseSenderNameWithLLM(
   logger?: FastifyBaseLogger
 ): Promise<string> {
   try {
-    const request: NameParsingRequest = {
-      model,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a name parsing assistant. Extract and format a person\'s name from an email address. Return ONLY the first and last name separated by a space, in proper title case (e.g., "John Smith", "Jim Allen"). IMPORTANT: Always include a space between first and last name. If you cannot determine a reasonable name, return "User".'
-        },
-        {
-          role: 'user',
-          content: `Extract the person's name from this email address: ${email}\n\nReturn format: FirstName LastName (with space)`
-        }
-      ],
-      max_tokens: 20,
-      temperature: 0.3
-    };
+    logger?.info({ email, apiUrl, model }, 'Parsing sender name with LLM via Langchain');
 
-    logger?.info({ email, apiUrl }, 'Parsing sender name with LLM');
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    // Initialize ChatOpenAI with qwen endpoint
+    const llm = new ChatOpenAI({
+      modelName: model,
+      temperature: 0.3,
+      maxTokens: 20,
+      timeout: 5000,
+      configuration: {
+        baseURL: apiUrl.replace('/v1/chat/completions', '/v1'),
       },
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(5000), // 5 second timeout
     });
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+    const systemMessage = new SystemMessage(
+      'You are a name parsing assistant. Extract and format a person\'s name from an email address. Return ONLY the first and last name separated by a space, in proper title case (e.g., "John Smith", "Jim Allen"). IMPORTANT: Always include a space between first and last name. If you cannot determine a reasonable name, return "User".'
+    );
 
-    const data = (await response.json()) as LLMResponse;
-    const parsedName = data.choices[0]?.message?.content?.trim() || 'User';
+    const userMessage = new HumanMessage(
+      `Extract the person's name from this email address: ${email}\n\nReturn format: FirstName LastName (with space)`
+    );
 
-    logger?.info({ email, parsedName }, 'LLM parsed sender name');
+    const response = await llm.invoke([systemMessage, userMessage]);
+    const parsedName = response.content.toString().trim() || 'User';
+
+    logger?.info({ email, parsedName }, 'LLM parsed sender name via Langchain');
 
     return parsedName;
   } catch (error) {
@@ -256,96 +236,109 @@ export function parseSenderName(email: string): string {
 /**
  * Builds personalized system prompt for email analysis
  * @param context - Email context with sender name, email, and subject
+ * @param detectedLanguage - Language detected by LLM (German, French, or English)
  * @returns Personalized system prompt
  */
-function buildSystemPrompt(context: EmailContext): string {
-  return `You are an expert email marketing analyst specializing in retail e-commerce campaigns.
+function buildSystemPrompt(context: EmailContext, detectedLanguage: string): string {
+  return `role: email marketing analyst (retail e-commerce)
 
-You are analyzing an email submitted by ${context.senderName} (${context.senderEmail}).
-Subject: "${context.subject}"
+=================================================================
+CRITICAL LANGUAGE REQUIREMENT - READ THIS FIRST
+=================================================================
 
-=== CRITICAL RULES - FOLLOW EXACTLY ===
+EMAIL LANGUAGE: ${detectedLanguage}
+OUTPUT LANGUAGE FOR SUGGESTIONS: ${detectedLanguage}
 
-RULE 1: CHARACTER FORMATTING
-- NEVER use Unicode symbols: ✓ ✗ † → ∗ ™ © ® ° • ◦ ▪ ▫ ■ □ ● ○ ◆ ◇ ★ ☆
-- ONLY use basic ASCII: [x] [+] [-] * -> <- 1. 2. 3.
-- Use standard numbers: 1. 2. 3. (NOT １ ２ ３)
+YOU MUST WRITE ALL SUGGESTIONS IN ${detectedLanguage.toUpperCase()}:
+* Subject line alternatives -> ${detectedLanguage}
+* CTA button text -> ${detectedLanguage}
+* Body copy examples -> ${detectedLanguage}
+* Any text the sender would copy -> ${detectedLanguage}
 
-RULE 2: LANGUAGE FOR SUGGESTIONS
-The original email language determines suggestion language:
-- German email → German suggestions ("Jetzt kaufen", "Hier klicken", "Angebot ansehen")
-- English email → English suggestions ("Shop now", "Click here", "View offer")
-- French email → French suggestions
-- Spanish email → Spanish suggestions
+KEEP IN ENGLISH:
+* Section headers (e.g., "SUBJECT LINE", "CTA")
+* Your analysis and explanations
+* Metrics and percentages
 
-EXAMPLES:
-Subject: "Ihr Kalender 2026" (German)
-✗ WRONG: "Try: Your Exclusive 2026 Calendar"
-[x] CORRECT: "Try: Ihr exklusiver Kalender 2026 - Jetzt sichern!"
+WRONG vs RIGHT examples for ${detectedLanguage}:
+${detectedLanguage === 'French' ? `
+[x] WRONG (English): "Shop now", "Follow us", "Get 20% off"
+[*] CORRECT (French): "Acheter maintenant", "Nous suivre", "Obtenez 20% de reduction"
+` : detectedLanguage === 'German' ? `
+[x] WRONG (English): "Shop now", "Follow us", "Get 20% off"
+[*] CORRECT (German): "Jetzt kaufen", "Folgen Sie uns", "Erhalten Sie 20% Rabatt"
+` : `
+[*] CORRECT (English): "Shop now", "Follow us", "Get 20% off"
+`}
+=================================================================
 
-CTA in German email:
-✗ WRONG: Suggest "Shop Now"
-[x] CORRECT: Suggest "Jetzt kaufen"
+context:
+  sender: ${context.senderName} (${context.senderEmail})
+  subject: "${context.subject}"
+  detected_language: ${detectedLanguage}
 
-Body copy in German email:
-✗ WRONG: "Replace with: Save 20% today"
-[x] CORRECT: "Replace with: Sparen Sie heute 20%"
+formatting_rules:
+  forbidden: [Unicode symbols like checkmarks, arrows]
+  use_ascii: ["[x]", "*", "->", "1."]
 
-RULE 3: WHAT TO WRITE IN ENGLISH
-- Section headers: LIFECYCLE CONTEXT, SUBJECT LINE, etc.
-- Your analysis and explanations
-- Recommendations and reasoning
+output_format: |
+  **Hi ${context.senderName},**
 
-RULE 4: WHAT TO WRITE IN ORIGINAL EMAIL LANGUAGE
-- Alternative subject lines
-- CTA button text
-- Email body copy examples
-- Any text the user would actually write
+  **DETECTED EMAIL LANGUAGE:** ${detectedLanguage}
+  **ALL SUGGESTIONS BELOW ARE IN:** ${detectedLanguage}
 
-=== RESPONSE FORMAT ===
+  **LIFECYCLE CONTEXT:**
+  Identify stage (Welcome/Abandoned Cart/Re-engagement/Post-Purchase), journey fit, benchmarks.
 
-**Hi ${context.senderName},**
+  **SUBJECT LINE (X/10):**
+  Score the actual subject content (IGNORE email client prefixes like "Fwd:", "Re:", "Fw:" - these are technical and should NOT be mentioned in analysis or recommendations).
 
-**LIFECYCLE CONTEXT:**
-Identify the campaign stage (Welcome, Abandoned Cart, Re-engagement, Post-Purchase, etc.) and explain how this email fits into the customer journey. Reference relevant industry benchmarks.
+  Analyze: open rates, personalization, urgency, mobile preview.
 
-**SUBJECT LINE (X/10):**
-Score and analyze "${context.subject}". Discuss effectiveness for open rates, personalization, urgency, and mobile preview.
+  Alternative Subject Lines (MUST BE IN ${detectedLanguage}):
+  1. [${detectedLanguage} text here - NOT English]
+  2. [${detectedLanguage} text here - NOT English]
+  3. [${detectedLanguage} text here - NOT English]
 
-Alternative subject lines to test (in original email language):
-1. [first alternative in same language as original email]
-2. [second alternative in same language as original email]
-3. [third alternative in same language as original email]
+  **BODY CONTENT (X/10):**
+  Score messaging, tone, structure, hierarchy, subject alignment.
 
-**BODY CONTENT (X/10):**
-Score and analyze the email body's messaging, tone, structure, and visual hierarchy. Comment on alignment with subject line promise.
+  Body Copy Examples (MUST BE IN ${detectedLanguage}):
+  - "[example in ${detectedLanguage}]" -> +X% engagement
+  - "[example in ${detectedLanguage}]" -> reasoning
 
-When suggesting body copy changes, write examples in the original email's language.
+  **CALL-TO-ACTION (X/10):**
+  Score placement, design, copy, clarity, urgency.
 
-**CALL-TO-ACTION (X/10):**
-Score the CTA placement, design, copy, and clarity. Analyze urgency and guidance toward desired action.
+  CTA Button Text (MUST BE IN ${detectedLanguage}):
+  - [CTA in ${detectedLanguage}]
+  - [CTA in ${detectedLanguage}]
+  - [CTA in ${detectedLanguage}]
 
-Suggested CTA text (in original email language):
-- [suggestion 1 in same language]
-- [suggestion 2 in same language]
+  **TECHNICAL/GDPR (X/10):**
+  Evaluate: mobile, images, load time, accessibility, GDPR compliance.
 
-**TECHNICAL/GDPR (X/10):**
-Evaluate technical implementation (mobile responsiveness, image optimization, load time), accessibility, and GDPR compliance (unsubscribe link, privacy policy, data handling).
+  **CONVERSION IMPACT:**
+  Data-driven estimates with percentages and reasoning.
 
-**CONVERSION IMPACT:**
-Provide data-driven estimates of potential conversion rate improvements. Use specific percentages and explain reasoning.
+  **RECOMMENDED ACTIONS:**
+  1. [action description in English] -> Example: "[${detectedLanguage} copy here]"
+  2. [action description in English] -> Example: "[${detectedLanguage} copy here]"
+  3. [action description in English] -> Example: "[${detectedLanguage} copy here]"
+  4-5. [more actions with ${detectedLanguage} examples]
 
-**RECOMMENDED ACTIONS:**
-Provide 3-5 numbered, prioritized recommendations:
+  **TRANSFERABLE LESSONS:**
+  2-3 psychology principles for other campaigns (explanation in English).
 
-1. [Action description in English] -> Example: "[example text in original email language]"
-2. [Action description in English] -> Example: "[example text in original email language]"
-3. [Action description in English] -> Example: "[example text in original email language]"
+FINAL VERIFICATION CHECKLIST (check before submitting):
+- All subject line alternatives are in ${detectedLanguage}
+- All CTA button text is in ${detectedLanguage}
+- All body copy examples are in ${detectedLanguage}
+- All sender-facing text is in ${detectedLanguage}
+- Section headers and analysis remain in English
+- No English suggestions if email is ${detectedLanguage}
 
-**TRANSFERABLE LESSONS:**
-Extract 2-3 behavioral psychology principles that ${context.senderName} can apply across other campaigns.
-
-Remember: Analysis in English, suggestions/examples in original email language, ASCII characters only.`;
+Remember: The sender will copy-paste your suggestions directly into their ${detectedLanguage} email campaign!`;
 }
 
 /**
@@ -400,6 +393,7 @@ export function formatLLMRequest(
   contentPackage: ContentPackage,
   emailContext: EmailContext,
   config: LLMConfig,
+  detectedLanguage: string,
   logger?: FastifyBaseLogger
 ): LLMRequest {
   // Build content array: images first, then text prompt
@@ -418,9 +412,52 @@ export function formatLLMRequest(
   // Build user prompt based on content type
   let userPrompt: string;
 
+  // Add ultra-clear language requirement at the very start of user prompt
+  const languageInstruction = `
+=================================================================
+CRITICAL: EMAIL LANGUAGE IS ${detectedLanguage.toUpperCase()}
+=================================================================
+
+YOU MUST FOLLOW THIS RULE WITHOUT EXCEPTION:
+
+Email Language Detected: ${detectedLanguage}
+Your Suggestions Must Be In: ${detectedLanguage}
+
+WHAT TO WRITE IN ${detectedLanguage}:
+-> All alternative subject lines
+-> All CTA button text suggestions
+-> All body copy examples
+-> Any text the sender would copy into their campaign
+
+WHAT TO KEEP IN ENGLISH:
+-> Section headers ("SUBJECT LINE", "CTA", etc.)
+-> Your analysis and explanations
+-> Performance metrics
+
+${detectedLanguage !== 'English' ? `
+WARNING: Do NOT write suggestions in English!
+The email is in ${detectedLanguage}, so suggestions must be ${detectedLanguage}.
+
+Example of WRONG output (DO NOT DO THIS):
+Subject alternatives:
+1. "Shop our new collection" <- [x] This is English, NOT ${detectedLanguage}!
+
+Example of CORRECT output:
+Subject alternatives:
+${detectedLanguage === 'French' ? `1. "Decouvrez notre nouvelle collection" <- [*] This is French!` :
+  detectedLanguage === 'German' ? `1. "Entdecken Sie unsere neue Kollektion" <- [*] This is German!` :
+  `1. "Check language-appropriate translation" <- [*] Correct language!`}
+` : ''}
+
+The sender will copy-paste your suggestions directly. They MUST be in ${detectedLanguage}!
+
+=================================================================
+
+`;
+
   if (contentPackage.images.length > 0) {
     // Has images - ask to analyze the screenshot
-    userPrompt = 'Analyze this email marketing campaign screenshot and provide detailed feedback following the structure specified in the system prompt.';
+    userPrompt = languageInstruction + 'Analyze this email marketing campaign screenshot and provide detailed feedback following the structure specified in the system prompt.';
 
     // If there's also text content, append it as context
     if (contentPackage.text && contentPackage.text.trim().length > 0) {
@@ -428,7 +465,7 @@ export function formatLLMRequest(
     }
   } else {
     // Text-only - analyze the text
-    userPrompt = `Analyze this email marketing campaign text and provide detailed feedback following the structure specified in the system prompt.\n\nEmail content:\n${contentPackage.text}`;
+    userPrompt = languageInstruction + `Analyze this email marketing campaign text and provide detailed feedback following the structure specified in the system prompt.\n\nEmail content:\n${contentPackage.text}`;
   }
 
   // Add text prompt
@@ -437,8 +474,8 @@ export function formatLLMRequest(
     text: userPrompt,
   });
 
-  // Build personalized system prompt
-  const systemPrompt = buildSystemPrompt(emailContext);
+  // Build personalized system prompt with detected language
+  const systemPrompt = buildSystemPrompt(emailContext, detectedLanguage);
 
   // Log request metadata (without actual content/base64)
   logger?.info(
@@ -611,6 +648,149 @@ export async function callLLMAPI(
 }
 
 /**
+ * Calls Claude via Langchain for email analysis with vision support
+ *
+ * @param contentPackage - Email content (text + images)
+ * @param emailContext - Email context for personalization
+ * @param detectedLanguage - Detected language of email
+ * @param maxTokens - Maximum tokens for response
+ * @param logger - Optional Fastify logger
+ * @returns LLM analysis result
+ */
+export async function callClaudeForAnalysis(
+  contentPackage: ContentPackage,
+  emailContext: EmailContext,
+  detectedLanguage: string,
+  maxTokens: number,
+  logger?: FastifyBaseLogger
+): Promise<LLMAnalysisResult> {
+  const startTime = Date.now();
+
+  try {
+    logger?.info({
+      model: 'claude-sonnet-4-20250514',
+      imageCount: contentPackage.images.length,
+      hasText: contentPackage.text.length > 0,
+      detectedLanguage
+    }, 'Starting Claude analysis via Langchain');
+
+    // Initialize Claude with Langchain
+    const model = new ChatAnthropic({
+      model: 'claude-sonnet-4-20250514',
+      temperature: 0.7,
+      maxTokens,
+    });
+
+    // Build system prompt
+    const systemPrompt = buildSystemPrompt(emailContext, detectedLanguage);
+
+    // Build user message content with language instruction
+    const languageInstruction = `
+=================================================================
+CRITICAL: EMAIL LANGUAGE IS ${detectedLanguage.toUpperCase()}
+=================================================================
+
+YOU MUST FOLLOW THIS RULE WITHOUT EXCEPTION:
+
+Email Language Detected: ${detectedLanguage}
+Your Suggestions Must Be In: ${detectedLanguage}
+
+WHAT TO WRITE IN ${detectedLanguage}:
+-> All alternative subject lines
+-> All CTA button text suggestions
+-> All body copy examples
+-> Any text the sender would copy into their campaign
+
+WHAT TO KEEP IN ENGLISH:
+-> Section headers ("SUBJECT LINE", "CTA", etc.)
+-> Your analysis and explanations
+-> Performance metrics
+
+${detectedLanguage !== 'English' ? `
+WARNING: Do NOT write suggestions in English!
+The email is in ${detectedLanguage}, so suggestions must be ${detectedLanguage}.
+
+Example of WRONG output (DO NOT DO THIS):
+Subject alternatives:
+1. "Shop our new collection" <- [x] This is English, NOT ${detectedLanguage}!
+
+Example of CORRECT output:
+Subject alternatives:
+${detectedLanguage === 'French' ? `1. "Decouvrez notre nouvelle collection" <- [*] This is French!` :
+  detectedLanguage === 'German' ? `1. "Entdecken Sie unsere neue Kollektion" <- [*] This is German!` :
+  `1. "Check language-appropriate translation" <- [*] Correct language!`}
+` : ''}
+
+The sender will copy-paste your suggestions directly. They MUST be in ${detectedLanguage}!
+
+IMPORTANT: DO NOT recommend removing email client prefixes (Fwd:, Re:, Fw:, etc.) from subject lines. These are technical forwarding/reply indicators and not part of the actual marketing content.
+
+=================================================================
+
+`;
+
+    let userPrompt: string;
+    if (contentPackage.images.length > 0) {
+      userPrompt = languageInstruction + 'Analyze this email marketing campaign screenshot and provide detailed feedback following the structure specified in the system prompt.';
+      if (contentPackage.text && contentPackage.text.trim().length > 0) {
+        userPrompt += `\n\nEmail text content:\n${contentPackage.text}`;
+      }
+    } else {
+      userPrompt = languageInstruction + `Analyze this email marketing campaign text and provide detailed feedback following the structure specified in the system prompt.\n\nEmail content:\n${contentPackage.text}`;
+    }
+
+    // Build message content for langchain (text + images)
+    const messageContent: any[] = [];
+
+    // Add text first
+    messageContent.push({
+      type: 'text',
+      text: userPrompt
+    });
+
+    // Add images
+    for (const image of contentPackage.images) {
+      messageContent.push({
+        type: 'image_url',
+        image_url: {
+          url: image.dataUrl
+        }
+      });
+    }
+
+    // Invoke Claude with system prompt and multimodal content
+    const response = await model.invoke([
+      new SystemMessage(systemPrompt),
+      new HumanMessage({
+        content: messageContent
+      })
+    ]);
+
+    const duration = Date.now() - startTime;
+
+    const feedback = response.content.toString().trim();
+
+    logger?.info({
+      feedbackLength: feedback.length,
+      duration,
+      model: 'claude-sonnet-4-20250514'
+    }, 'Claude analysis completed via Langchain');
+
+    return {
+      feedback,
+      processingTimeMs: duration
+    };
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    logger?.error({
+      error: error instanceof Error ? error.message : String(error),
+      duration
+    }, 'Claude analysis failed');
+    throw error;
+  }
+}
+
+/**
  * Zod schema for LLM API response validation
  */
 const LLMResponseSchema = z.object({
@@ -698,6 +878,15 @@ export function parseLLMResponse(
     'LLM response parsed successfully'
   );
 
+  // Log actual feedback content for evaluation
+  logger?.info(
+    {
+      feedback: feedback,
+      feedbackLength: feedback.length,
+    },
+    'LLM feedback content'
+  );
+
   // Warn if content is unusually long
   if (feedback.length > 5000) {
     logger?.warn(
@@ -711,4 +900,200 @@ export function parseLLMResponse(
     tokensUsed,
     processingTimeMs,
   };
+}
+
+/**
+ * Detects the language of an email using Claude via Langchain
+ * @param subject - Email subject line
+ * @param textContent - Email body text (optional, not used since emails are forwarded)
+ * @param llmUrl - LLM API URL (not used, kept for compatibility)
+ * @param config - LLM configuration (not used, kept for compatibility)
+ * @param timeoutMs - Request timeout in milliseconds
+ * @param logger - Optional Fastify logger
+ * @returns Detected language (German, French, or English)
+ */
+export async function detectLanguageWithLLM(
+  subject: string,
+  textContent: string,
+  llmUrl: string,
+  config: LLMConfig,
+  timeoutMs: number,
+  logger?: FastifyBaseLogger
+): Promise<string> {
+  // Strip common email prefixes before detection
+  const cleanSubject = subject
+    .replace(/^(Fwd?:|Re:|FW:|RE:)\s*/i, '')
+    .trim();
+
+  try {
+    const startTime = Date.now();
+
+    logger?.info(
+      {
+        subject: cleanSubject,
+        originalSubject: subject,
+      },
+      'Detecting language with Claude'
+    );
+
+    // Initialize Claude with Langchain
+    const model = new ChatAnthropic({
+      model: 'claude-sonnet-4-20250514',
+      temperature: 0,
+      maxTokens: 10,
+    });
+
+    // Create language detection prompt
+    const prompt = `Detect the language of this email subject line. Return ONLY one word: German, French, or English. Default to German if unclear.
+
+Subject: "${cleanSubject}"
+
+Language:`;
+
+    const response = await model.invoke(prompt);
+    const duration = Date.now() - startTime;
+
+    const detectedLanguage = response.content.toString().trim();
+
+    logger?.info(
+      {
+        detectedLanguage,
+        duration,
+        cleanSubject,
+      },
+      'Language detected with Claude'
+    );
+
+    // Validate and normalize
+    if (detectedLanguage.toLowerCase().includes('french')) {
+      return 'French';
+    } else if (detectedLanguage.toLowerCase().includes('english')) {
+      return 'English';
+    } else {
+      return 'German'; // Default
+    }
+  } catch (error) {
+    logger?.warn({ error, subject: cleanSubject }, 'Language detection failed, defaulting to German');
+    return 'German';
+  }
+}
+
+/**
+ * Translates suggestions in the feedback to the detected language
+ * @param feedback - Original feedback with English suggestions
+ * @param detectedLanguage - Target language (French, German, Spanish, etc.)
+ * @param llmUrl - LLM API URL
+ * @param config - LLM configuration
+ * @param logger - Optional Fastify logger
+ * @returns Translated feedback
+ */
+export async function translateSuggestions(
+  feedback: string,
+  detectedLanguage: string,
+  llmUrl: string,
+  config: LLMConfig,
+  timeoutMs: number,
+  logger?: FastifyBaseLogger
+): Promise<string> {
+  // Skip translation if language is English
+  if (detectedLanguage === 'English') {
+    return feedback;
+  }
+
+  logger?.info({ detectedLanguage }, 'Starting suggestion translation');
+
+  const translationPrompt = `role: professional translator
+
+task: translate marketing suggestions to ${detectedLanguage}
+
+rules:
+  translate_only:
+    - subject line alternatives (in quotes)
+    - CTA button text (in quotes)
+    - body copy examples (in quotes)
+    - sender-copyable text
+
+  keep_english:
+    - section headers (LIFECYCLE CONTEXT, SUBJECT LINE, CTA, etc.)
+    - analysis/explanations
+    - metrics/percentages/benchmarks
+    - citations
+
+  preserve: exact format and structure
+
+input:
+${feedback}
+
+output: complete feedback with suggestions in ${detectedLanguage}`;
+
+  const translationRequest = {
+    model: config.model,
+    messages: [
+      {
+        role: 'user' as const,
+        content: translationPrompt,
+      },
+    ],
+    max_tokens: config.maxTokens * 2, // Allow more tokens for translation
+    temperature: 0.3, // Lower temperature for more accurate translation
+  };
+
+  try {
+    const startTime = Date.now();
+
+    logger?.info(
+      {
+        url: llmUrl,
+        targetLanguage: detectedLanguage,
+      },
+      'Sending translation request to LLM'
+    );
+
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    const response = await fetch(llmUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(translationRequest),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const duration = Date.now() - startTime;
+
+    logger?.info(
+      {
+        statusCode: response.status,
+        statusText: response.statusText,
+        duration,
+      },
+      'Received translation response from LLM'
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const parsedResponse = parseLLMResponse(data, duration, logger);
+
+    logger?.info({ translatedLength: parsedResponse.feedback.length }, 'Translation completed');
+
+    return parsedResponse.feedback;
+  } catch (error) {
+    logger?.error(
+      {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        detectedLanguage,
+      },
+      'Translation failed, returning original feedback'
+    );
+    // If translation fails, return original feedback
+    return feedback;
+  }
 }
