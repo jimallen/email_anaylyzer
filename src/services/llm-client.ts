@@ -670,6 +670,7 @@ export async function callClaudeForAnalysis(
     logger?.info({
       model: 'claude-sonnet-4-20250514',
       imageCount: contentPackage.images.length,
+      pdfCount: contentPackage.pdfs.length,
       hasText: contentPackage.text.length > 0,
       detectedLanguage
     }, 'Starting Claude analysis via Langchain');
@@ -739,7 +740,7 @@ IMPORTANT: DO NOT recommend removing email client prefixes (Fwd:, Re:, Fw:, etc.
       userPrompt = languageInstruction + `Analyze this email marketing campaign text and provide detailed feedback following the structure specified in the system prompt.\n\nEmail content:\n${contentPackage.text}`;
     }
 
-    // Build message content for langchain (text + images)
+    // Build message content for langchain (text + images + PDFs)
     const messageContent: any[] = [];
 
     // Add text first
@@ -756,6 +757,22 @@ IMPORTANT: DO NOT recommend removing email client prefixes (Fwd:, Re:, Fw:, etc.
           url: image.dataUrl
         }
       });
+    }
+
+    // Add PDFs as document blocks (Claude native support)
+    for (const pdf of contentPackage.pdfs) {
+      messageContent.push({
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: 'application/pdf',
+          data: pdf.base64
+        }
+      });
+      logger?.info({
+        filename: pdf.filename,
+        size: pdf.data.length
+      }, 'Added PDF document to Claude request');
     }
 
     // Invoke Claude with system prompt and multimodal content

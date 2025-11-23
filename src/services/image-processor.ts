@@ -317,6 +317,58 @@ async function convertPdfToImages(
 }
 
 /**
+ * Separates PDF attachments from images without converting
+ *
+ * Returns PDFs as-is for Claude's native PDF support,
+ * and images unchanged for standard processing.
+ *
+ * @param downloads - Array of downloaded attachments
+ * @param attachments - Original attachment metadata for type checking
+ * @param logger - Optional logger
+ * @returns Object with separated PDFs and images arrays
+ */
+export function separatePDFsAndImages(
+  downloads: DownloadedImage[],
+  attachments: Attachment[],
+  logger?: FastifyBaseLogger
+): { pdfs: DownloadedImage[]; images: DownloadedImage[] } {
+  const pdfs: DownloadedImage[] = [];
+  const images: DownloadedImage[] = [];
+
+  for (const download of downloads) {
+    const attachment = attachments.find((a) => a.filename === download.filename);
+
+    if (!attachment) {
+      logger?.warn({
+        filename: download.filename
+      }, 'Downloaded file has no matching attachment metadata - skipping');
+      continue;
+    }
+
+    if (attachment.contentType === PDF_MIME_TYPE) {
+      logger?.info({
+        filename: download.filename,
+        size: download.data.length
+      }, 'Keeping PDF as-is for Claude');
+      pdfs.push(download);
+    } else {
+      logger?.info({
+        filename: download.filename,
+        contentType: attachment.contentType
+      }, 'Processing as image');
+      images.push(download);
+    }
+  }
+
+  logger?.info({
+    pdfCount: pdfs.length,
+    imageCount: images.length
+  }, 'Separated PDFs and images');
+
+  return { pdfs, images };
+}
+
+/**
  * Processes downloaded attachments, converting PDFs to images
  *
  * Detects PDF attachments and converts them to images before validation.

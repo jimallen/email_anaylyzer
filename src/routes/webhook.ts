@@ -6,10 +6,11 @@ import {
   categorizeContent,
   validateContentPackage,
   type ProcessingContext,
+  type PDFDocument,
 } from '../services/email-processor';
 import {
   downloadImages,
-  processAttachments,
+  separatePDFsAndImages,
   validateImage,
   encodeImages,
 } from '../services/image-processor';
@@ -28,6 +29,59 @@ import {
 import { isWhitelisted } from '../services/whitelist';
 import { ContentProcessingError, LLMError } from '../lib/errors';
 import { config } from '../services/config';
+
+/**
+ * Fetch full email content from Resend API
+ * Uses the /emails/receiving/{email_id} endpoint
+ * Returns email with html and text body content
+ */
+async function fetchEmailFromResend(
+  emailId: string,
+  apiKey: string,
+  logger?: any
+): Promise<{ html?: string; text?: string } | null> {
+  try {
+    const url = `https://api.resend.com/emails/receiving/${emailId}`;
+
+    logger?.info({ emailId, url }, 'Fetching email content from Resend API');
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger?.error({
+        statusCode: response.status,
+        error: errorText,
+        emailId,
+        url
+      }, 'Resend API error fetching email content');
+      return null;
+    }
+
+    const result = await response.json() as { html?: string; text?: string };
+
+    logger?.info({
+      emailId,
+      hasHtml: Boolean(result.html),
+      hasText: Boolean(result.text),
+      htmlLength: result.html?.length || 0,
+      textLength: result.text?.length || 0
+    }, 'Fetched email content from Resend');
+
+    return result;
+  } catch (error) {
+    logger?.error({
+      error: error instanceof Error ? error.message : String(error),
+      emailId
+    }, 'Failed to fetch email content from Resend');
+    return null;
+  }
+}
 
 /**
  * Fetch all attachments for an inbound email from Resend API
@@ -157,44 +211,59 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         })) || []
       }, 'Raw webhook received from Resend');
 
-      // Fetch attachments from Resend API using /emails/receiving/{email_id}/attachments
+      // Fetch full email content and attachments from Resend API
       const emailId = webhook.data.email_id;
       const webhookAttachments = webhook.data.attachments || [];
 
+      let fetchedEmailContent: { html?: string; text?: string } = {};
       let normalizedAttachments: Attachment[] = [];
 
       if (!emailId) {
-        request.log.warn('No email_id in webhook data - cannot fetch attachments');
-      } else if (webhookAttachments.length === 0) {
-        request.log.info({ emailId }, 'No attachments in webhook payload');
+        request.log.warn('No email_id in webhook data - cannot fetch email content or attachments');
       } else {
-        // Fetch all attachments in one API call
-        normalizedAttachments = await fetchAttachmentsFromResend(
+        // Fetch email content (html and text body)
+        const fetchedEmail = await fetchEmailFromResend(
           emailId,
           config.resendApiKey,
           request.log
         );
 
-        request.log.info({
-          emailId,
-          webhookAttachmentCount: webhookAttachments.length,
-          fetchedAttachmentCount: normalizedAttachments.length,
-          attachments: normalizedAttachments.map(a => ({
-            filename: a.filename,
-            contentType: a.contentType,
-            hasUrl: Boolean(a.url),
-            urlPreview: a.url.substring(0, 100)
-          }))
-        }, 'Fetched attachments from Resend API');
+        if (fetchedEmail) {
+          fetchedEmailContent = fetchedEmail;
+        }
+
+        // Fetch attachments if present
+        if (webhookAttachments.length > 0) {
+          normalizedAttachments = await fetchAttachmentsFromResend(
+            emailId,
+            config.resendApiKey,
+            request.log
+          );
+
+          request.log.info({
+            emailId,
+            webhookAttachmentCount: webhookAttachments.length,
+            fetchedAttachmentCount: normalizedAttachments.length,
+            attachments: normalizedAttachments.map(a => ({
+              filename: a.filename,
+              contentType: a.contentType,
+              hasUrl: Boolean(a.url),
+              urlPreview: a.url.substring(0, 100)
+            }))
+          }, 'Fetched attachments from Resend API');
+        } else {
+          request.log.info({ emailId }, 'No attachments in webhook payload');
+        }
       }
 
       // Normalize to flat structure (take first "to" address)
+      // Use fetched email content if available, otherwise fall back to webhook data
       const payload: WebhookPayload = {
         from: webhook.data.from,
         to: webhook.data.to[0] || '', // Take first recipient or empty string
         subject: webhook.data.subject,
-        text: webhook.data.text,
-        html: webhook.data.html,
+        text: fetchedEmailContent.text || webhook.data.text,
+        html: fetchedEmailContent.html || webhook.data.html,
         attachments: normalizedAttachments,
       };
 
@@ -278,47 +347,35 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         pdfFilenames: pdfAttachments.map(p => p.filename)
       }, 'Captured PDFs for response attachment');
 
-      // Step 3.5: Process attachments (convert PDFs to images)
+      // Step 3.5: Separate PDFs from images (no conversion needed)
       request.log.info({
         downloadedCount: downloadedImages.length
-      }, 'Starting attachment processing (PDF conversion)');
+      }, 'Separating PDFs and images');
 
-      const processedImages = await processAttachments(
+      const { pdfs: separatedPDFs, images: separatedImages } = separatePDFsAndImages(
         downloadedImages,
         attachments,
         request.log
       );
 
       request.log.info({
-        processedCount: processedImages.length,
-        downloadedCount: downloadedImages.length,
-        expansionRatio: downloadedImages.length > 0 ? (processedImages.length / downloadedImages.length).toFixed(2) : 'N/A'
-      }, 'Attachment processing complete');
+        pdfCount: separatedPDFs.length,
+        imageCount: separatedImages.length
+      }, 'PDFs and images separated');
 
       // Step 4: Validate and filter images
       request.log.info({
-        imagesToValidate: processedImages.length
+        imagesToValidate: separatedImages.length
       }, 'Starting image validation');
 
       const validatedImages: Array<{ filename: string; contentType: string; data: Buffer }> = [];
       let formatFailures = 0;
       let sizeFailures = 0;
 
-      for (const image of processedImages) {
-        // For PDF-converted images, use JPEG as content type
-        // For regular images, find original attachment metadata
-        let contentType = 'image/jpeg'; // Default for PDF conversions (now using JPEG)
-
+      for (const image of separatedImages) {
+        // Find original attachment metadata for content type
         const attachment = attachments.find(att => att.filename === image.filename);
-        if (attachment) {
-          contentType = attachment.contentType;
-        } else if (image.filename.includes('-page-')) {
-          // This is a PDF-converted page, keep JPEG
-          request.log.info({
-            filename: image.filename,
-            inferredType: 'PDF page conversion'
-          }, 'Using JPEG content type for PDF-converted page');
-        }
+        const contentType = attachment?.contentType || 'image/jpeg';
 
         // Create synthetic attachment for validation
         const syntheticAttachment = {
@@ -367,31 +424,52 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
 
       request.log.info({
         validatedCount: validatedImages.length,
-        totalImages: processedImages.length,
+        totalImages: separatedImages.length,
         formatFailures,
         sizeFailures,
-        successRate: processedImages.length > 0 ? `${Math.round((validatedImages.length / processedImages.length) * 100)}%` : 'N/A'
+        successRate: separatedImages.length > 0 ? `${Math.round((validatedImages.length / separatedImages.length) * 100)}%` : 'N/A'
       }, 'Image validation complete');
 
       // Step 5: Encode images to base64
       const encodedImages = encodeImages(validatedImages, request.log);
 
+      // Step 5.5: Encode PDFs to base64 for Claude
+      const encodedPDFs: PDFDocument[] = separatedPDFs.map(pdf => ({
+        filename: pdf.filename,
+        data: pdf.data,
+        base64: pdf.data.toString('base64')
+      }));
+
+      request.log.info({
+        pdfCount: encodedPDFs.length,
+        pdfs: encodedPDFs.map(p => ({
+          filename: p.filename,
+          size: p.data.length
+        }))
+      }, 'PDFs encoded for Claude');
+
       // Step 6: Categorize content
       request.log.info({
         textLength: textContent.length,
-        encodedImageCount: encodedImages.length
+        encodedImageCount: encodedImages.length,
+        pdfCount: encodedPDFs.length
       }, 'Categorizing content');
 
-      const contentPackage = categorizeContent(textContent, encodedImages);
+      const contentPackage = categorizeContent(textContent, encodedImages, encodedPDFs);
 
       request.log.info({
         contentType: contentPackage.contentType,
         textLength: contentPackage.text.length,
         imageCount: contentPackage.images.length,
+        pdfCount: contentPackage.pdfs.length,
         images: contentPackage.images.map(img => ({
           filename: img.filename,
           contentType: img.contentType,
           dataUrlLength: img.dataUrl.length
+        })),
+        pdfs: contentPackage.pdfs.map(pdf => ({
+          filename: pdf.filename,
+          size: pdf.data.length
         }))
       }, 'Content categorized');
 

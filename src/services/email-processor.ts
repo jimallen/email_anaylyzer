@@ -14,6 +14,15 @@ import {
  */
 
 /**
+ * PDF document for LLM API
+ */
+export interface PDFDocument {
+  filename: string;
+  data: Buffer; // Raw PDF data
+  base64: string; // Base64-encoded PDF
+}
+
+/**
  * Content package for LLM API
  * Represents processed email content ready for analysis
  */
@@ -21,6 +30,7 @@ export interface ContentPackage {
   contentType: 'text-only' | 'screenshot-only' | 'hybrid' | 'empty';
   text: string;
   images: EncodedImage[];
+  pdfs: PDFDocument[];
 }
 
 /**
@@ -129,20 +139,22 @@ export function detectAttachments(payload: WebhookPayload): Attachment[] {
  */
 export function categorizeContent(
   text: string,
-  images: EncodedImage[]
+  images: EncodedImage[],
+  pdfs: PDFDocument[] = []
 ): ContentPackage {
   // Determine what content is available
   const hasText = text.trim().length > 0;
   const hasImages = images.length > 0;
+  const hasPDFs = pdfs.length > 0;
 
   // Categorize based on content availability
   let contentType: ContentPackage['contentType'];
 
-  if (!hasText && !hasImages) {
+  if (!hasText && !hasImages && !hasPDFs) {
     contentType = 'empty';
-  } else if (hasText && !hasImages) {
+  } else if (hasText && !hasImages && !hasPDFs) {
     contentType = 'text-only';
-  } else if (!hasText && hasImages) {
+  } else if (!hasText && (hasImages || hasPDFs)) {
     contentType = 'screenshot-only';
   } else {
     contentType = 'hybrid';
@@ -153,6 +165,7 @@ export function categorizeContent(
     contentType,
     text,
     images,
+    pdfs,
   };
 }
 
