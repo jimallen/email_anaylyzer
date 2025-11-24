@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
+import { marked } from 'marked';
 
 /**
  * Resend Email Sending Client
@@ -39,6 +40,7 @@ interface ResendEmailRequest {
   to: string;
   subject: string;
   text: string;
+  html?: string;
   attachments?: ResendAttachment[];
 }
 
@@ -119,12 +121,16 @@ export async function sendEmail(
   // Default from address if not provided
   const fromAddress = config.fromAddress || 'Email Analyzer <noreply@yourdomain.com>';
 
-  // Build request body
+  // Convert markdown to HTML
+  const htmlBody = await marked(body);
+
+  // Build request body with both text and HTML versions
   const requestBody: ResendEmailRequest = {
     from: fromAddress,
     to,
     subject,
-    text: body,
+    text: body, // Plain text version (fallback)
+    html: htmlBody, // HTML version (preferred)
   };
 
   // Add attachments if provided

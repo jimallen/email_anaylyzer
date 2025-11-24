@@ -61,6 +61,7 @@ export class EmailAnalyzerStack extends cdk.Stack {
       bundling: {
         minify: false, // Keep false for debugging
         sourceMap: true,
+        forceDockerBundling: false, // Use local bundling instead of Docker
         externalModules: [
           'aws-sdk', // Already available in Lambda
         ],

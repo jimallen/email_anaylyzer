@@ -106,17 +106,13 @@ export async function parseSenderNameWithLLM(
   logger?: FastifyBaseLogger
 ): Promise<string> {
   try {
-    logger?.info({ email, apiUrl, model }, 'Parsing sender name with LLM via Langchain');
+    logger?.info({ email, model: 'claude-haiku' }, 'Parsing sender name with Claude via Langchain');
 
-    // Initialize ChatOpenAI with qwen endpoint
-    const llm = new ChatOpenAI({
-      modelName: model,
+    // Initialize Claude Haiku (fast and cheap for simple name parsing)
+    const llm = new ChatAnthropic({
+      model: 'claude-3-5-haiku-20241022',
       temperature: 0.3,
       maxTokens: 20,
-      timeout: 5000,
-      configuration: {
-        baseURL: apiUrl.replace('/v1/chat/completions', '/v1'),
-      },
     });
 
     const systemMessage = new SystemMessage(
@@ -648,6 +644,83 @@ export async function callLLMAPI(
 }
 
 /**
+ * Formats EmailAnalysisJSON to human-readable text
+ * @param analysis - Structured analysis JSON
+ * @param emailContext - Email context for personalization
+ * @returns Formatted text for email
+ */
+function formatAnalysisToText(analysis: EmailAnalysisJSON, emailContext: EmailContext): string {
+  const parts: string[] = [];
+
+  // Greeting
+  parts.push(`**Hi ${emailContext.senderName},**\n`);
+
+  // Detected language
+  parts.push(`**DETECTED EMAIL LANGUAGE:** ${analysis.detectedLanguage}`);
+  parts.push(`**ALL SUGGESTIONS BELOW ARE IN:** ${analysis.detectedLanguage}\n`);
+
+  // Lifecycle Context
+  parts.push(`**LIFECYCLE CONTEXT:**`);
+  parts.push(`Stage: ${analysis.lifecycleContext.stage}`);
+  parts.push(`Journey Fit: ${analysis.lifecycleContext.journeyFit}`);
+  parts.push(`Benchmarks: ${analysis.lifecycleContext.benchmarks}\n`);
+
+  // Subject Line
+  parts.push(`**SUBJECT LINE (${analysis.subjectLine.score}/10):**`);
+  parts.push(analysis.subjectLine.analysis);
+  parts.push(`\nAlternative Subject Lines:`);
+  analysis.subjectLine.alternatives.forEach((alt, i) => {
+    parts.push(`${i + 1}. ${alt}`);
+  });
+  parts.push('');
+
+  // Body Content
+  parts.push(`**BODY CONTENT (${analysis.bodyContent.score}/10):**`);
+  parts.push(analysis.bodyContent.analysis);
+  if (analysis.bodyContent.examples.length > 0) {
+    parts.push(`\nBody Copy Examples:`);
+    analysis.bodyContent.examples.forEach(example => {
+      parts.push(`- "${example.text}" -> ${example.impact}`);
+    });
+  }
+  parts.push('');
+
+  // Call to Action
+  parts.push(`**CALL-TO-ACTION (${analysis.callToAction.score}/10):**`);
+  parts.push(analysis.callToAction.analysis);
+  if (analysis.callToAction.suggestions.length > 0) {
+    parts.push(`\nCTA Button Text:`);
+    analysis.callToAction.suggestions.forEach(suggestion => {
+      parts.push(`- ${suggestion}`);
+    });
+  }
+  parts.push('');
+
+  // Technical/GDPR
+  parts.push(`**TECHNICAL/GDPR (${analysis.technicalGdpr.score}/10):**`);
+  parts.push(analysis.technicalGdpr.analysis + '\n');
+
+  // Conversion Impact
+  parts.push(`**CONVERSION IMPACT:**`);
+  parts.push(analysis.conversionImpact.estimates + '\n');
+
+  // Recommended Actions
+  parts.push(`**RECOMMENDED ACTIONS:**`);
+  analysis.recommendedActions.forEach((action, i) => {
+    parts.push(`${i + 1}. ${action.action} -> Example: "${action.example}"`);
+  });
+  parts.push('');
+
+  // Transferable Lessons
+  parts.push(`**TRANSFERABLE LESSONS:**`);
+  analysis.transferableLessons.forEach((lesson, i) => {
+    parts.push(`${i + 1}. ${lesson}`);
+  });
+
+  return parts.join('\n');
+}
+
+/**
  * Calls Claude via Langchain for email analysis with vision support
  *
  * @param contentPackage - Email content (text + images)
@@ -673,71 +746,46 @@ export async function callClaudeForAnalysis(
       pdfCount: contentPackage.pdfs.length,
       hasText: contentPackage.text.length > 0,
       detectedLanguage
-    }, 'Starting Claude analysis via Langchain');
+    }, 'Starting Claude analysis via Langchain with structured output');
 
-    // Initialize Claude with Langchain
+    // Initialize Claude with Langchain and structured output
     const model = new ChatAnthropic({
       model: 'claude-sonnet-4-20250514',
       temperature: 0.7,
       maxTokens,
     });
 
-    // Build system prompt
-    const systemPrompt = buildSystemPrompt(emailContext, detectedLanguage);
+    // Create structured output model with Zod schema
+    const structuredModel = model.withStructuredOutput(EmailAnalysisSchema, {
+      name: 'email_analysis'
+    });
 
-    // Build user message content with language instruction
-    const languageInstruction = `
-=================================================================
-CRITICAL: EMAIL LANGUAGE IS ${detectedLanguage.toUpperCase()}
-=================================================================
+    // Build system prompt with explicit JSON formatting instructions
+    const systemPrompt = `You are an email marketing analyst specializing in retail e-commerce.
 
-YOU MUST FOLLOW THIS RULE WITHOUT EXCEPTION:
+Analyze the provided email marketing campaign and provide comprehensive feedback.
 
-Email Language Detected: ${detectedLanguage}
-Your Suggestions Must Be In: ${detectedLanguage}
+CRITICAL LANGUAGE REQUIREMENT:
+- Email Language: ${detectedLanguage}
+- ALL suggestions (subject lines, CTA text, body copy examples) MUST be in ${detectedLanguage}
+- Analysis and explanations should be in English
+- DO NOT suggest removing email client prefixes (Fwd:, Re:, Fw:) from subject lines
 
-WHAT TO WRITE IN ${detectedLanguage}:
--> All alternative subject lines
--> All CTA button text suggestions
--> All body copy examples
--> Any text the sender would copy into their campaign
+Provide scores out of 10 for each section and specific, actionable recommendations.
+Remember: the sender will copy-paste your suggestions directly into their ${detectedLanguage} campaign.
 
-WHAT TO KEEP IN ENGLISH:
--> Section headers ("SUBJECT LINE", "CTA", etc.)
--> Your analysis and explanations
--> Performance metrics
+IMPORTANT: Return your response as a valid JSON object matching this exact structure (no markdown, no code blocks, just raw JSON):
+${JSON.stringify(EmailAnalysisSchema.shape, null, 2)}`;
 
-${detectedLanguage !== 'English' ? `
-WARNING: Do NOT write suggestions in English!
-The email is in ${detectedLanguage}, so suggestions must be ${detectedLanguage}.
-
-Example of WRONG output (DO NOT DO THIS):
-Subject alternatives:
-1. "Shop our new collection" <- [x] This is English, NOT ${detectedLanguage}!
-
-Example of CORRECT output:
-Subject alternatives:
-${detectedLanguage === 'French' ? `1. "Decouvrez notre nouvelle collection" <- [*] This is French!` :
-  detectedLanguage === 'German' ? `1. "Entdecken Sie unsere neue Kollektion" <- [*] This is German!` :
-  `1. "Check language-appropriate translation" <- [*] Correct language!`}
-` : ''}
-
-The sender will copy-paste your suggestions directly. They MUST be in ${detectedLanguage}!
-
-IMPORTANT: DO NOT recommend removing email client prefixes (Fwd:, Re:, Fw:, etc.) from subject lines. These are technical forwarding/reply indicators and not part of the actual marketing content.
-
-=================================================================
-
-`;
-
+    // Build user message content
     let userPrompt: string;
     if (contentPackage.images.length > 0) {
-      userPrompt = languageInstruction + 'Analyze this email marketing campaign screenshot and provide detailed feedback following the structure specified in the system prompt.';
+      userPrompt = 'Analyze this email marketing campaign screenshot and provide detailed structured feedback.';
       if (contentPackage.text && contentPackage.text.trim().length > 0) {
         userPrompt += `\n\nEmail text content:\n${contentPackage.text}`;
       }
     } else {
-      userPrompt = languageInstruction + `Analyze this email marketing campaign text and provide detailed feedback following the structure specified in the system prompt.\n\nEmail content:\n${contentPackage.text}`;
+      userPrompt = `Analyze this email marketing campaign text and provide detailed structured feedback.\n\nEmail content:\n${contentPackage.text}`;
     }
 
     // Build message content for langchain (text + images + PDFs)
@@ -775,7 +823,7 @@ IMPORTANT: DO NOT recommend removing email client prefixes (Fwd:, Re:, Fw:, etc.
       }, 'Added PDF document to Claude request');
     }
 
-    // Invoke Claude with system prompt and multimodal content
+    // Invoke Claude - use base model to get both structured output AND usage metadata
     const response = await model.invoke([
       new SystemMessage(systemPrompt),
       new HumanMessage({
@@ -785,16 +833,28 @@ IMPORTANT: DO NOT recommend removing email client prefixes (Fwd:, Re:, Fw:, etc.
 
     const duration = Date.now() - startTime;
 
-    const feedback = response.content.toString().trim();
+    // Extract token usage from response metadata
+    const tokensUsed = response.usage_metadata?.total_tokens || response.response_metadata?.usage?.total_tokens;
+
+    // Parse the JSON from the response content
+    const content = response.content as string;
+    const analysisJson = JSON.parse(content) as EmailAnalysisJSON;
+
+    // Convert structured JSON to text format for email
+    const feedback = formatAnalysisToText(analysisJson, emailContext);
 
     logger?.info({
       feedbackLength: feedback.length,
       duration,
-      model: 'claude-sonnet-4-20250514'
-    }, 'Claude analysis completed via Langchain');
+      tokensUsed,
+      model: 'claude-sonnet-4-20250514',
+      hasStructuredOutput: true
+    }, 'Claude analysis completed via Langchain with structured output');
 
     return {
       feedback,
+      analysisJson, // Include structured JSON for storage
+      tokensUsed,
       processingTimeMs: duration
     };
   } catch (error) {
@@ -822,10 +882,89 @@ const LLMResponseSchema = z.object({
 });
 
 /**
+ * Zod schema for structured email analysis
+ */
+export const EmailAnalysisSchema = z.object({
+  detectedLanguage: z.string().describe('The detected language of the email (German, French, or English)'),
+  lifecycleContext: z.object({
+    stage: z.string().describe('Email lifecycle stage (Welcome/Abandoned Cart/Re-engagement/Post-Purchase)'),
+    journeyFit: z.string().describe('How the email fits in the customer journey'),
+    benchmarks: z.string().describe('Relevant benchmarks for this type of email')
+  }),
+  subjectLine: z.object({
+    score: z.number().min(0).max(10).describe('Subject line score out of 10'),
+    analysis: z.string().describe('Analysis of the subject line including open rates, personalization, urgency, and mobile preview'),
+    alternatives: z.array(z.string()).describe('3 alternative subject lines in the detected language')
+  }),
+  bodyContent: z.object({
+    score: z.number().min(0).max(10).describe('Body content score out of 10'),
+    analysis: z.string().describe('Analysis of messaging, tone, structure, hierarchy, and subject alignment'),
+    examples: z.array(z.object({
+      text: z.string().describe('Example body copy in the detected language'),
+      impact: z.string().describe('Expected impact with reasoning')
+    }))
+  }),
+  callToAction: z.object({
+    score: z.number().min(0).max(10).describe('CTA score out of 10'),
+    analysis: z.string().describe('Analysis of placement, design, copy, clarity, and urgency'),
+    suggestions: z.array(z.string()).describe('CTA button text suggestions in the detected language')
+  }),
+  technicalGdpr: z.object({
+    score: z.number().min(0).max(10).describe('Technical/GDPR score out of 10'),
+    analysis: z.string().describe('Evaluation of mobile, images, load time, accessibility, and GDPR compliance')
+  }),
+  conversionImpact: z.object({
+    estimates: z.string().describe('Data-driven estimates with percentages and reasoning')
+  }),
+  recommendedActions: z.array(z.object({
+    action: z.string().describe('Action description in English'),
+    example: z.string().describe('Example copy in the detected language')
+  })),
+  transferableLessons: z.array(z.string()).describe('2-3 psychology principles for other campaigns')
+});
+
+/**
+ * Structured email analysis result
+ */
+export interface EmailAnalysisJSON {
+  detectedLanguage: string;
+  lifecycleContext: {
+    stage: string;
+    journeyFit: string;
+    benchmarks: string;
+  };
+  subjectLine: {
+    score: number;
+    analysis: string;
+    alternatives: string[];
+  };
+  bodyContent: {
+    score: number;
+    analysis: string;
+    examples: Array<{ text: string; impact: string }>;
+  };
+  callToAction: {
+    score: number;
+    analysis: string;
+    suggestions: string[];
+  };
+  technicalGdpr: {
+    score: number;
+    analysis: string;
+  };
+  conversionImpact: {
+    estimates: string;
+  };
+  recommendedActions: Array<{ action: string; example: string }>;
+  transferableLessons: string[];
+}
+
+/**
  * LLM analysis result with feedback and metadata
  */
 export interface LLMAnalysisResult {
   feedback: string;
+  analysisJson?: EmailAnalysisJSON; // Structured JSON for storage
   tokensUsed?: number;
   processingTimeMs?: number;
 }

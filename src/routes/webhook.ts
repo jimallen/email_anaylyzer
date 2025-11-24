@@ -219,28 +219,28 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         })) || []
       }, 'Raw webhook received from Resend');
 
-      // Idempotency check: Skip if we've already processed this email
+      // TESTING: Idempotency check disabled for testing
       const emailId = webhook.data.email_id;
-      if (emailId && processedEmailIds.has(emailId)) {
-        request.log.info({
-          emailId,
-          from: webhook.data.from,
-          subject: webhook.data.subject
-        }, 'Duplicate webhook detected - email already processed');
-        return reply.code(200).send({ success: true, message: 'Already processed' });
-      }
+      // if (emailId && processedEmailIds.has(emailId)) {
+      //   request.log.info({
+      //     emailId,
+      //     from: webhook.data.from,
+      //     subject: webhook.data.subject
+      //   }, 'Duplicate webhook detected - email already processed');
+      //   return reply.code(200).send({ success: true, message: 'Already processed' });
+      // }
 
-      // Mark email as being processed
-      if (emailId) {
-        processedEmailIds.add(emailId);
-        request.log.info({ emailId }, 'Email marked as being processed');
+      // // Mark email as being processed
+      // if (emailId) {
+      //   processedEmailIds.add(emailId);
+      //   request.log.info({ emailId }, 'Email marked as being processed');
 
-        // Clean up old entries after TTL
-        setTimeout(() => {
-          processedEmailIds.delete(emailId);
-          request.log.debug({ emailId }, 'Email ID removed from cache after TTL');
-        }, CACHE_TTL_MS);
-      }
+      //   // Clean up old entries after TTL
+      //   setTimeout(() => {
+      //     processedEmailIds.delete(emailId);
+      //     request.log.debug({ emailId }, 'Email ID removed from cache after TTL');
+      //   }, CACHE_TTL_MS);
+      // }
 
       // Fetch full email content and attachments from Resend API
       const webhookAttachments = webhook.data.attachments || [];
@@ -667,8 +667,9 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
           emailContent: textContent,
           detectedLanguage,
           claudeAnalysis: llmResult.feedback,
+          claudeAnalysisJson: llmResult.analysisJson, // Store structured JSON
           tokensUsed: llmResult.tokensUsed,
-          processingTimeMs: llmResult.processingTimeMs,
+          processingTimeMs: llmResult.processingTimeMs || 0,
           contentType: contentPackage.contentType,
           imageCount: contentPackage.images.length,
           pdfCount: contentPackage.pdfs.length,
@@ -681,6 +682,14 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
             error: error instanceof Error ? error.message : String(error)
           }, 'Failed to save analysis data (non-blocking)');
         });
+
+        // Log that we're saving structured JSON
+        if (llmResult.analysisJson) {
+          request.log.info({
+            emailId,
+            hasStructuredJson: true
+          }, 'Saving structured analysis JSON to DynamoDB');
+        }
       }
 
       // Warn if exceeding 30-second target
