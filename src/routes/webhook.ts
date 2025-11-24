@@ -29,6 +29,7 @@ import {
 import { isWhitelisted } from '../services/whitelist';
 import { ContentProcessingError, LLMError } from '../lib/errors';
 import { config } from '../services/config';
+import { createAnalysisRecord, saveAnalysisData } from '../services/dynamodb-client';
 
 /**
  * In-memory cache of processed email IDs for idempotency
@@ -656,6 +657,31 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
 
       // Calculate total duration
       const totalDuration = Date.now() - startTime;
+
+      // Save analysis data to DynamoDB for future fine-tuning
+      if (emailId) {
+        const analysisRecord = createAnalysisRecord({
+          emailId,
+          from: payload.from,
+          subject: payload.subject || '',
+          emailContent: textContent,
+          detectedLanguage,
+          claudeAnalysis: llmResult.feedback,
+          tokensUsed: llmResult.tokensUsed,
+          processingTimeMs: llmResult.processingTimeMs,
+          contentType: contentPackage.contentType,
+          imageCount: contentPackage.images.length,
+          pdfCount: contentPackage.pdfs.length,
+        });
+
+        // Save asynchronously - don't block the response
+        saveAnalysisData(analysisRecord, request.log).catch(error => {
+          request.log.error({
+            emailId,
+            error: error instanceof Error ? error.message : String(error)
+          }, 'Failed to save analysis data (non-blocking)');
+        });
+      }
 
       // Warn if exceeding 30-second target
       if (totalDuration > 30000) {
