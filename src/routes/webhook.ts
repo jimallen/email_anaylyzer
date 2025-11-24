@@ -31,6 +31,13 @@ import { ContentProcessingError, LLMError } from '../lib/errors';
 import { config } from '../services/config';
 
 /**
+ * In-memory cache of processed email IDs for idempotency
+ * Prevents duplicate processing of the same email from webhook retries
+ */
+const processedEmailIds = new Set<string>();
+const CACHE_TTL_MS = 3600000; // 1 hour
+
+/**
  * Fetch full email content from Resend API
  * Uses the /emails/receiving/{email_id} endpoint
  * Returns email with html and text body content
@@ -211,8 +218,30 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         })) || []
       }, 'Raw webhook received from Resend');
 
-      // Fetch full email content and attachments from Resend API
+      // Idempotency check: Skip if we've already processed this email
       const emailId = webhook.data.email_id;
+      if (emailId && processedEmailIds.has(emailId)) {
+        request.log.info({
+          emailId,
+          from: webhook.data.from,
+          subject: webhook.data.subject
+        }, 'Duplicate webhook detected - email already processed');
+        return reply.code(200).send({ success: true, message: 'Already processed' });
+      }
+
+      // Mark email as being processed
+      if (emailId) {
+        processedEmailIds.add(emailId);
+        request.log.info({ emailId }, 'Email marked as being processed');
+
+        // Clean up old entries after TTL
+        setTimeout(() => {
+          processedEmailIds.delete(emailId);
+          request.log.debug({ emailId }, 'Email ID removed from cache after TTL');
+        }, CACHE_TTL_MS);
+      }
+
+      // Fetch full email content and attachments from Resend API
       const webhookAttachments = webhook.data.attachments || [];
 
       let fetchedEmailContent: { html?: string; text?: string } = {};
