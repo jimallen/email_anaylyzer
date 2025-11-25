@@ -1,0 +1,15 @@
+FROM public.ecr.aws/lambda/provided:al2023
+
+# Install poppler-utils which includes pdftoppm
+RUN dnf install -y poppler-utils && dnf clean all
+
+# Copy binaries and libraries to layer structure
+RUN mkdir -p /opt/bin /opt/lib
+RUN cp -L /usr/bin/pdftoppm /opt/bin/
+RUN cp -L /usr/bin/pdfinfo /opt/bin/
+RUN cp -L /usr/bin/pdftotext /opt/bin/
+
+# Copy required shared libraries
+RUN ldd /usr/bin/pdftoppm | grep "=> /" | awk '{print $3}' | xargs -I '{}' cp -v '{}' /opt/lib/ || true
+
+CMD ["bash"]

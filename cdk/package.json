@@ -1,0 +1,27 @@
+{
+  "name": "email-analyzer-cdk",
+  "version": "1.0.0",
+  "description": "CDK infrastructure for Email Analyzer",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "deploy": "cdk deploy",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "destroy": "cdk destroy"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "aws-cdk": "^2.160.0",
+    "esbuild": "^0.21.0",
+    "ts-node": "^10.9.1",
+    "typescript": "~5.3.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.160.0",
+    "constructs": "^10.0.0",
+    "dotenv": "^16.4.5",
+    "source-map-support": "^0.5.21"
+  }
+}
