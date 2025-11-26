@@ -1,6 +1,8 @@
 # Email Analyzer - Agent Context Guide
 
 > **For AI Agents**: This document provides a complete index of project documentation. Read relevant sections before making changes.
+>
+> **Note**: Claude Code automatically loads [CLAUDE.md](CLAUDE.md) at startup, which points to this file. This file (AGENT.md) is the detailed project guide.
 
 ## Project Summary
 
@@ -27,6 +29,13 @@
 
 ## Documentation Index
 
+### Agent Entry Point
+
+| File | Description | When to Read |
+|------|-------------|--------------|
+| [CLAUDE.md](CLAUDE.md) | Claude Code entry point - points to this file and coding standards | Auto-loaded by Claude Code at startup |
+| [.agent.rules.md](.agent.rules.md) | Celebrate GmbH TypeScript coding standards | When writing code, referenced by CLAUDE.md |
+
 ### Core Documentation
 
 | File | Description | When to Read |
@@ -37,6 +46,12 @@
 | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | Webhook API, request/response schemas, examples | Working with webhook, understanding data formats |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Monitoring, troubleshooting, maintenance, incidents | Debugging issues, understanding logs, operations tasks |
 | [docs/TESTING.md](docs/TESTING.md) | Test strategy, mocking, coverage, CI/CD | Writing tests, understanding test approach |
+
+### Feature Development
+
+| File | Description | When to Read |
+|------|-------------|--------------|
+| [tasks/prd-persona-based-analysis.md](tasks/prd-persona-based-analysis.md) | PRD for persona-based email analysis system | Implementing persona feature, understanding persona requirements |
 
 ### Deployment & Configuration
 

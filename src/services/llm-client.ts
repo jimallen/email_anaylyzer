@@ -1,8 +1,8 @@
 import type { ContentPackage } from './email-processor';
 import type { FastifyBaseLogger } from 'fastify';
+import type { Persona } from '../lib/persona-types';
 import { z } from 'zod';
 import { ChatAnthropic } from '@langchain/anthropic';
-import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import {
   createLLMTimeoutError,
@@ -726,6 +726,7 @@ function formatAnalysisToText(analysis: EmailAnalysisJSON, emailContext: EmailCo
  * @param contentPackage - Email content (text + images)
  * @param emailContext - Email context for personalization
  * @param detectedLanguage - Detected language of email
+ * @param persona - AI persona for analysis perspective
  * @param maxTokens - Maximum tokens for response
  * @param logger - Optional Fastify logger
  * @returns LLM analysis result
@@ -734,6 +735,7 @@ export async function callClaudeForAnalysis(
   contentPackage: ContentPackage,
   emailContext: EmailContext,
   detectedLanguage: string,
+  persona: Persona,
   maxTokens: number,
   logger?: FastifyBaseLogger
 ): Promise<LLMAnalysisResult> {
@@ -745,7 +747,9 @@ export async function callClaudeForAnalysis(
       imageCount: contentPackage.images.length,
       pdfCount: contentPackage.pdfs.length,
       hasText: contentPackage.text.length > 0,
-      detectedLanguage
+      detectedLanguage,
+      personaId: persona.personaId,
+      personaName: persona.name
     }, 'Starting Claude analysis via Langchain with structured output');
 
     // Initialize Claude with Langchain and structured output
@@ -755,15 +759,17 @@ export async function callClaudeForAnalysis(
       maxTokens,
     });
 
-    // Create structured output model with Zod schema
-    const structuredModel = model.withStructuredOutput(EmailAnalysisSchema, {
-      name: 'email_analysis'
-    });
+    // TODO: Use structured output model with Zod schema for better type safety
+    // Example: const structuredModel = model.withStructuredOutput(EmailAnalysisSchema, { name: 'email_analysis' });
 
-    // Build system prompt with explicit JSON formatting instructions
-    const systemPrompt = `You are an email marketing analyst specializing in retail e-commerce.
+    // Build system prompt with persona context and JSON formatting instructions
+    const focusAreasText = persona.focusAreas.join(', ');
+    const systemPrompt = `${persona.systemPrompt}
 
-Analyze the provided email marketing campaign and provide comprehensive feedback.
+PERSONA CONTEXT:
+- You are analyzing as: ${persona.name}
+- Your key focus areas: ${focusAreasText}
+- Your tone: ${persona.tone}
 
 CRITICAL LANGUAGE REQUIREMENT:
 - Email Language: ${detectedLanguage}
@@ -771,7 +777,7 @@ CRITICAL LANGUAGE REQUIREMENT:
 - Analysis and explanations should be in English
 - DO NOT suggest removing email client prefixes (Fwd:, Re:, Fw:) from subject lines
 
-Provide scores out of 10 for each section and specific, actionable recommendations.
+Provide scores out of 10 for each section and specific, actionable recommendations from your persona's perspective.
 Remember: the sender will copy-paste your suggestions directly into their ${detectedLanguage} campaign.
 
 IMPORTANT: Return your response as a valid JSON object matching this exact structure (no markdown, no code blocks, just raw JSON):
@@ -834,7 +840,7 @@ ${JSON.stringify(EmailAnalysisSchema.shape, null, 2)}`;
     const duration = Date.now() - startTime;
 
     // Extract token usage from response metadata
-    const tokensUsed = response.usage_metadata?.total_tokens || response.response_metadata?.usage?.total_tokens;
+    const tokensUsed = response.usage_metadata?.total_tokens || (response.response_metadata as any)?.usage?.total_tokens || 0;
 
     // Parse the JSON from the response content
     const content = response.content as string;

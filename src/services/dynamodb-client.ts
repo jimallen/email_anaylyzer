@@ -48,6 +48,10 @@ export interface EmailAnalysisRecord {
   from: string; // Sender email (GSI partition key)
   subject: string;
 
+  // Persona fields
+  personaId: string; // ID of persona that analyzed this email
+  personaName: string; // Name of persona for easy reference
+
   // Legacy fields for backward compatibility
   emailContent: string; // Text content of email
   detectedLanguage: string;
@@ -120,6 +124,8 @@ export function createAnalysisRecord(params: {
   emailId: string;
   from: string;
   subject: string;
+  personaId: string;
+  personaName: string;
   emailContent: string;
   detectedLanguage: string;
   claudeAnalysis: string;
@@ -187,6 +193,10 @@ Provide detailed structured feedback following the email marketing analysis fram
     timestamp: Date.now(),
     from: params.from,
     subject: params.subject,
+
+    // Persona fields
+    personaId: params.personaId,
+    personaName: params.personaName,
 
     // Legacy fields for backward compatibility
     emailContent: params.emailContent,

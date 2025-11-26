@@ -41,7 +41,7 @@ if [ ${#MISSING_VARS[@]} -ne 0 ]; then
 fi
 
 # Set AWS profile and region
-export AWS_PROFILE=AdministratorAccess-123567778292
+export AWS_PROFILE=jim-stage
 export AWS_REGION=eu-central-1
 export CDK_DEFAULT_REGION=eu-central-1
 

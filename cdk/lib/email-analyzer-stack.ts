@@ -40,6 +40,29 @@ export class EmailAnalyzerStack extends cdk.Stack {
       },
     });
 
+    // DynamoDB table for storing persona configurations
+    const personaTable = new dynamodb.Table(this, 'EmailAnalysisPersonasTable', {
+      partitionKey: {
+        name: 'personaId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // On-demand pricing
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Keep persona data even if stack is deleted
+      pointInTimeRecovery: true, // Enable backup
+      tableName: 'EmailAnalysisPersonas',
+      encryption: dynamodb.TableEncryption.AWS_MANAGED, // Enable encryption at rest
+    });
+
+    // Add GSI for querying personas by email address
+    personaTable.addGlobalSecondaryIndex({
+      indexName: 'EmailAddressIndex',
+      partitionKey: {
+        name: 'emailAddress',
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL, // Project all attributes
+    });
+
     // Lambda Layer for pdftoppm (poppler-utils)
     // TODO: Build and add poppler layer for PDF support
     // See scripts/build-poppler-layer.sh for instructions
@@ -89,12 +112,16 @@ export class EmailAnalyzerStack extends cdk.Stack {
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
         SPARKY_LLM_URL: process.env.SPARKY_LLM_URL || '',
         DYNAMODB_TABLE_NAME: analysisTable.tableName,
+        PERSONA_TABLE_NAME: personaTable.tableName,
       },
       logRetention: logs.RetentionDays.ONE_WEEK,
     });
 
-    // Grant Lambda write permissions to DynamoDB table
+    // Grant Lambda write permissions to DynamoDB analysis table
     analysisTable.grantWriteData(emailAnalyzerFunction);
+
+    // Grant Lambda read permissions to DynamoDB persona table
+    personaTable.grantReadData(emailAnalyzerFunction);
 
     // Create API Gateway REST API
     const api = new apigateway.RestApi(this, 'EmailAnalyzerApi', {
@@ -154,6 +181,13 @@ export class EmailAnalyzerStack extends cdk.Stack {
       value: analysisTable.tableName,
       description: 'DynamoDB table for email analysis data',
       exportName: 'EmailAnalysisTableName',
+    });
+
+    // Output Persona table name
+    new cdk.CfnOutput(this, 'PersonaTableName', {
+      value: personaTable.tableName,
+      description: 'DynamoDB table for persona configurations',
+      exportName: 'EmailAnalysisPersonaTableName',
     });
   }
 }

@@ -26,6 +26,10 @@ import {
 import {
   sendEmailWithRetry,
 } from '../services/resend-client';
+import {
+  getPersonaByEmail,
+  getDefaultPersona,
+} from '../services/persona-service';
 import { isWhitelisted } from '../services/whitelist';
 import { ContentProcessingError, LLMError } from '../lib/errors';
 import { config } from '../services/config';
@@ -37,6 +41,13 @@ import { createAnalysisRecord, saveAnalysisData } from '../services/dynamodb-cli
  */
 const processedEmailIds = new Set<string>();
 const CACHE_TTL_MS = 3600000; // 1 hour
+
+/**
+ * Clear old entries from the idempotency cache
+ */
+setInterval(() => {
+  processedEmailIds.clear();
+}, CACHE_TTL_MS);
 
 /**
  * Fetch full email content from Resend API
@@ -219,28 +230,28 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         })) || []
       }, 'Raw webhook received from Resend');
 
-      // TESTING: Idempotency check disabled for testing
+      // Idempotency check to prevent duplicate processing
       const emailId = webhook.data.email_id;
-      // if (emailId && processedEmailIds.has(emailId)) {
-      //   request.log.info({
-      //     emailId,
-      //     from: webhook.data.from,
-      //     subject: webhook.data.subject
-      //   }, 'Duplicate webhook detected - email already processed');
-      //   return reply.code(200).send({ success: true, message: 'Already processed' });
-      // }
+      if (emailId && processedEmailIds.has(emailId)) {
+        request.log.info({
+          emailId,
+          from: webhook.data.from,
+          subject: webhook.data.subject
+        }, 'Duplicate webhook detected - email already processed');
+        return reply.code(200).send({ success: true, message: 'Already processed' });
+      }
 
-      // // Mark email as being processed
-      // if (emailId) {
-      //   processedEmailIds.add(emailId);
-      //   request.log.info({ emailId }, 'Email marked as being processed');
+      // Mark email as being processed
+      if (emailId) {
+        processedEmailIds.add(emailId);
+        request.log.info({ emailId }, 'Email marked as being processed');
 
-      //   // Clean up old entries after TTL
-      //   setTimeout(() => {
-      //     processedEmailIds.delete(emailId);
-      //     request.log.debug({ emailId }, 'Email ID removed from cache after TTL');
-      //   }, CACHE_TTL_MS);
-      // }
+        // Clean up old entries after TTL
+        setTimeout(() => {
+          processedEmailIds.delete(emailId);
+          request.log.debug({ emailId }, 'Email ID removed from cache after TTL');
+        }, CACHE_TTL_MS);
+      }
 
       // Fetch full email content and attachments from Resend API
       const webhookAttachments = webhook.data.attachments || [];
@@ -316,6 +327,43 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         },
         'Webhook normalized and ready for processing'
       );
+
+      // ===== Persona Lookup =====
+
+      // Look up persona by recipient email address (payload.to)
+      request.log.info({
+        recipientEmail: payload.to
+      }, 'Looking up persona by recipient email');
+
+      let persona = await getPersonaByEmail(payload.to, request.log);
+      const cacheHit = Boolean(persona); // If found immediately, it was likely from cache
+
+      if (!persona) {
+        request.log.warn({
+          recipientEmail: payload.to
+        }, 'No persona found for recipient email, falling back to default persona');
+
+        persona = await getDefaultPersona(request.log);
+
+        if (!persona) {
+          request.log.error({
+            recipientEmail: payload.to
+          }, 'Default persona not found - this is a critical configuration error');
+
+          throw new ContentProcessingError(
+            'NO_PERSONA_FOUND',
+            'Email analysis service is not configured properly. Please contact support.',
+            { recipientEmail: payload.to }
+          );
+        }
+      }
+
+      request.log.info({
+        personaId: persona.personaId,
+        personaName: persona.name,
+        recipientEmail: payload.to,
+        cacheHit
+      }, 'Persona resolved successfully');
 
       // ===== Epic 3: Content Extraction & Processing =====
 
@@ -581,6 +629,7 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         contentPackage,
         emailContext,
         detectedLanguage,
+        persona,
         llmConfig.maxTokens,
         request.log
       );
@@ -611,6 +660,7 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
         payload.subject,
         llmResult.feedback,
         senderName,
+        persona,
         pdfAttachments,
         llmResult.processingTimeMs,
         llmResult.tokensUsed,
@@ -664,6 +714,8 @@ export default async function webhookRoute(fastify: FastifyInstance): Promise<vo
           emailId,
           from: payload.from,
           subject: payload.subject || '',
+          personaId: persona.personaId,
+          personaName: persona.name,
           emailContent: textContent,
           detectedLanguage,
           claudeAnalysis: llmResult.feedback,
