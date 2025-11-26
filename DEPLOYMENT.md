@@ -37,11 +37,22 @@ The CDK deployment creates:
    - CORS: Enabled
    - Logging: Enabled with metrics
 
-3. **ECR Repository**
+3. **DynamoDB Tables** ✨ UPDATED
+   - **EmailAnalysisData**: Stores analysis data for fine-tuning
+     - Partition key: emailId
+     - Sort key: timestamp
+     - GSI: SenderIndex (from + timestamp)
+   - **EmailAnalysisPersonas**: Stores AI persona configurations
+     - Partition key: personaId
+     - GSI: EmailAddressIndex (emailAddress)
+     - Encryption: AWS-managed SSE
+     - Point-in-time recovery: Enabled
+
+4. **ECR Repository**
    - Automatically created and managed by CDK
    - Stores Docker images for Lambda
 
-4. **CloudWatch Logs**
+5. **CloudWatch Logs**
    - Log retention: 7 days
    - Structured JSON logging
 
@@ -80,11 +91,18 @@ The CDK deployment creates:
 
 ### Optional
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RESEND_FROM_EMAIL` | From email address | `onboarding@resend.dev` |
-| `SPARKY_LLM_URL` | Custom LLM endpoint URL | (none) |
-| `AWS_REGION` | AWS region for deployment | `us-east-1` |
+| Variable | Description | Default | Notes |
+|----------|-------------|---------|-------|
+| `RESEND_FROM_EMAIL` | From email address | `onboarding@resend.dev` | ✨ Set to persona email (e.g., jenny-bot@allennet.me) for persona-branded responses |
+| `SPARKY_LLM_URL` | Custom LLM endpoint URL | (none) | Optional custom LLM endpoint |
+| `AWS_REGION` | AWS region for deployment | `us-east-1` | AWS deployment region |
+
+### Auto-Injected (CDK)
+
+| Variable | Description | Source |
+|----------|-------------|--------|
+| `DYNAMODB_TABLE_NAME` | Analysis data table name | CDK stack output |
+| `PERSONA_TABLE_NAME` | ✨ Persona configurations table | CDK stack output |
 
 ## Deployment Process
 
@@ -133,28 +151,71 @@ CDK automatically:
 
 ## Post-Deployment Configuration
 
-### 1. Get Webhook URL
+### 1. Seed AI Personas ✨ NEW (CRITICAL)
+
+**This step is required for the system to function properly.**
+
+After first-time deployment, populate the persona table:
+
+```bash
+# From project root
+AWS_PROFILE=your-profile AWS_REGION=eu-central-1 npx tsx scripts/seed-personas.ts
+```
+
+This creates 3 AI personas:
+- **jenny-bot@allennet.me** - Brand & Marketing Expert
+- **christoph-bot@allennet.me** - Conversion & Performance Expert
+- **icp-bot@allennet.me** - Ideal Customer Profile Expert
+
+**Notes:**
+- Script is **idempotent** - safe to run multiple times
+- Updates existing personas if they exist
+- Required before any email analysis can work
+- Logs persona creation/update to console
+
+**Verification:**
+```bash
+# Check DynamoDB table has personas
+aws dynamodb scan --table-name EmailAnalysisPersonas --region eu-central-1
+```
+
+### 2. Get Webhook URL
 
 After deployment, CDK outputs the webhook URL:
 
 ```
 Outputs:
 EmailAnalyzerStack.WebhookUrl = https://xxxxx.execute-api.us-east-1.amazonaws.com/prod/webhook/inbound-email
+EmailAnalyzerStack.PersonaTableName = EmailAnalysisPersonas
 ```
 
-### 2. Configure Resend
+### 3. Configure Resend Inbound Routing ✨ UPDATED
 
-1. Go to [Resend Dashboard](https://resend.com/inbound)
-2. Click "Add Webhook"
-3. Paste the webhook URL from CDK output
-4. Select event type: "email.received"
-5. Save
+Configure **separate inbound routes** for each persona:
 
-### 3. Test the Webhook
+1. Go to [Resend Dashboard](https://resend.com/emails/inbound)
+2. For **each persona**, add an inbound route:
+   - **Domain**: allennet.me (or your domain)
+   - **Email**: jenny-bot@ (or christoph-bot@, icp-bot@)
+   - **Forward to**: The webhook URL from CDK output
+3. Save all routes
 
-Send a test email to your inbound email address and check:
-- CloudWatch Logs for processing
-- Your email inbox for the analysis response
+**Important**: Each persona needs its own inbound route so Resend forwards emails to the correct recipient address.
+
+### 4. Test the Webhook
+
+Send test emails to each persona address:
+```bash
+# Test each persona
+echo "Email draft content" | mail -s "Test Email" jenny-bot@allennet.me
+echo "Email draft content" | mail -s "Test Email" christoph-bot@allennet.me
+echo "Email draft content" | mail -s "Test Email" icp-bot@allennet.me
+```
+
+Check:
+- CloudWatch Logs for processing (use `./tail-logs.sh --follow`)
+- Your email inbox for persona-specific analysis responses
+- Response subject should show `[Persona Name Analysis] Re: Test Email`
 
 ## Monitoring and Logs
 

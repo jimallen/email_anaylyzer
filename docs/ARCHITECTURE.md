@@ -20,13 +20,14 @@ Email Analyzer is a serverless, event-driven system that processes inbound email
 │  (Webhook)  │         │              │         │   (Fastify)    │
 └─────────────┘         └──────────────┘         └────────────────┘
                                                           │
-                               ┌──────────────────────────┼──────────────────────────┐
-                               │                          │                          │
-                               ▼                          ▼                          ▼
-                        ┌──────────────┐          ┌──────────────┐          ┌──────────────┐
-                        │   Resend     │          │  Claude AI   │          │  DynamoDB    │
-                        │  (Send Email)│          │  (Analysis)  │          │ (Fine-tuning)│
-                        └──────────────┘          └──────────────┘          └──────────────┘
+                               ┌──────────────────────────┼──────────────────────────┬───────────────────┐
+                               │                          │                          │                   │
+                               ▼                          ▼                          ▼                   ▼
+                        ┌──────────────┐          ┌──────────────┐          ┌──────────────┐   ┌─────────────────┐
+                        │   Resend     │          │  Claude AI   │          │  DynamoDB    │   │   DynamoDB      │
+                        │  (Send Email)│          │  (Analysis)  │          │ (Fine-tuning)│   │ (Personas +     │
+                        └──────────────┘          └──────────────┘          └──────────────┘   │  Cache Layer)   │
+                                                                                                └─────────────────┘
 ```
 
 ### Component Architecture
@@ -71,12 +72,29 @@ Three core services handle business logic:
 **c) DynamoDB Client (`services/dynamodb-client.ts`)**
 - Persists analysis data for fine-tuning
 - Functions:
-  - `createAnalysisRecord()` - Stores complete analysis with metadata
+  - `createAnalysisRecord()` - Stores complete analysis with metadata (now includes personaId and personaName)
 - Features:
   - Fine-tuning format with system/user/assistant messages
   - Removes undefined values automatically
   - Secondary index on sender email
   - Point-in-time recovery enabled
+
+**d) Persona Service (`services/persona-service.ts`)** ✨ NEW
+- Manages AI persona configurations with caching
+- Functions:
+  - `getPersonaByEmail()` - Look up persona by recipient email (uses GSI)
+  - `getPersonaById()` - Direct lookup by persona ID
+  - `getDefaultPersona()` - Returns jenny-bot as fallback
+  - `createPersona()`, `updatePersona()`, `upsertPersona()` - CRUD operations
+- Features:
+  - **In-Memory Cache**: 1-hour TTL to reduce DynamoDB reads
+  - **Cache Invalidation**: Automatic cleanup via setInterval
+  - **Fast Lookups**: O(1) cache check, then GSI query on emailAddress
+  - **Fallback Logic**: Default to jenny-bot if persona not found
+- Performance:
+  - Cache hit: ~0ms (in-memory lookup)
+  - Cache miss: ~50-100ms (DynamoDB GSI query)
+  - Reduces DynamoDB reads by ~90% under normal usage
 
 #### 3. Infrastructure Layer (AWS CDK)
 
@@ -95,20 +113,44 @@ Three core services handle business logic:
   - Data trace enabled
   - CORS: All origins (development)
 
-- **DynamoDB Table**:
+- **DynamoDB Tables**:
+
+  **EmailAnalysisData Table**:
   - Name: `EmailAnalysisData`
   - Partition key: `emailId` (String)
   - Sort key: `timestamp` (Number)
   - Billing: Pay-per-request
   - GSI: `SenderIndex` (partition: `from`, sort: `timestamp`)
   - Retention: RETAIN (data preserved on stack delete)
+  - New fields: `personaId` (String), `personaName` (String)
+
+  **EmailAnalysisPersonas Table** ✨ NEW:
+  - Name: `EmailAnalysisPersonas`
+  - Partition key: `personaId` (String)
+  - Billing: Pay-per-request
+  - GSI: `EmailAddressIndex` (partition: `emailAddress`)
+  - Encryption: AWS-managed SSE
+  - Point-in-time recovery: Enabled
+  - Retention: RETAIN (personas are configuration data)
+  - Schema:
+    - `personaId`: Unique identifier (e.g., "jenny-bot")
+    - `emailAddress`: Recipient email for routing (e.g., "jenny-bot@allennet.me")
+    - `name`: Display name (e.g., "Jenny-bot")
+    - `description`: Persona background and expertise
+    - `systemPrompt`: Claude system prompt (100-5000 chars)
+    - `focusAreas`: Array of expertise areas
+    - `tone`: Communication style description
+    - `customSections`: Optional analysis section customizations
+    - `emailConfig`: { primaryColor, headerText } for branding
+    - `isActive`: Boolean flag for persona availability
+    - `createdAt`, `updatedAt`: Timestamps
 
 ## Data Flow
 
 ### Email Reception Flow
 
 ```
-1. User forwards email to inbound address
+1. User forwards email to persona address (e.g., jenny-bot@allennet.me)
      ↓
 2. Resend receives email, triggers webhook
      ↓
@@ -120,18 +162,29 @@ Three core services handle business logic:
    a. Fetch full email content from Resend API
    b. Extract text/attachments
    c. Download and encode images/PDFs
-   d. Parse sender name with Claude Haiku
-   e. Detect email language with Claude
+   d. ✨ Resolve persona by recipient email:
+      - Check in-memory cache (1-hour TTL)
+      - If miss: Query DynamoDB PersonasTable via EmailAddressIndex GSI
+      - If not found: Fall back to default persona (jenny-bot)
+      - Cache result for future lookups
+   e. Parse sender name with Claude Haiku
+   f. Detect email language with Claude
      ↓
-6. Call Claude Sonnet 4 for analysis
+6. Call Claude Sonnet 4 for analysis with persona context
+   - Inject persona's system prompt
+   - Include persona focus areas and tone
    - Structured output with Zod schema
    - Extract token usage from response metadata
      ↓
-7. Format response email (markdown → HTML)
+7. Format response email with persona branding
+   - Subject: [Persona Name Analysis] Re: Subject
+   - Body includes persona intro and signature
+   - markdown → HTML conversion
      ↓
 8. Send analysis email via Resend (with retry)
      ↓
-9. Save to DynamoDB (fire-and-forget)
+9. Save to DynamoDB with persona metadata (fire-and-forget)
+   - Includes personaId and personaName fields
      ↓
 10. Return 200 OK to Resend
 ```
@@ -148,6 +201,36 @@ Is it retryable? (timeout, 5xx, network)
      └─ No: (4xx client errors)
               Log error + return failure
 ```
+
+### Persona Resolution Flow ✨ NEW
+
+```
+Recipient email received (payload.to)
+     ↓
+Check in-memory cache
+     ├─ HIT: Return cached persona (0ms)
+     └─ MISS: Query DynamoDB
+              ↓
+         Query EmailAddressIndex GSI
+              ├─ FOUND: Cache + return persona (50-100ms)
+              └─ NOT FOUND: Get default persona
+                           ↓
+                      getPersonaById('jenny-bot')
+                           ├─ FOUND: Cache + return (50ms)
+                           └─ ERROR: Throw NO_PERSONA_FOUND error
+```
+
+**Caching Strategy:**
+- **TTL**: 1 hour (3600000ms)
+- **Invalidation**: Automatic cleanup via setInterval
+- **Cache Key**: Email address (exact match)
+- **Cache Miss Penalty**: 50-100ms DynamoDB query
+- **Expected Hit Rate**: ~90% under normal usage (same personas re-used)
+
+**Fallback Chain:**
+1. Lookup by recipient email → Cache/DynamoDB
+2. If not found → Lookup default persona (jenny-bot)
+3. If default missing → Critical error (system misconfigured)
 
 ## Key Design Decisions
 
@@ -181,6 +264,21 @@ Is it retryable? (timeout, 5xx, network)
 - **Levels**: Error, Warn, Info
 - **Metadata**: Operation context, timing, counts
 - **Why**: CloudWatch Insights queries, troubleshooting
+
+### 6. Persona-Based Analysis Architecture ✨ NEW
+- **Why**: Different stakeholders need different perspectives (brand vs conversion vs ICP)
+- **Implementation**:
+  - Separate persona configurations in DynamoDB
+  - Dynamic system prompt injection based on persona
+  - Email-based routing (jenny-bot@allennet.me → Jenny persona)
+- **Caching Strategy**: In-memory cache with 1-hour TTL
+  - **Why**: Personas rarely change, avoid DynamoDB cost
+  - **Trade-off**: Stale data for up to 1 hour after persona updates
+  - **Mitigation**: Lambda restart clears cache, or wait for TTL expiration
+- **Fallback Logic**: Always default to jenny-bot if persona not found
+  - **Why**: Graceful degradation, no analysis failures
+  - **Trade-off**: Users might not realize they emailed wrong address
+  - **Future**: Consider sending warning email about unknown persona
 
 ## Security Considerations
 
@@ -267,6 +365,10 @@ Is it retryable? (timeout, 5xx, network)
 | DynamoDB write failure | No fine-tuning data | Logged, non-critical |
 | Lambda timeout (5min) | Request fails | Resend retries webhook |
 | Lambda memory exhausted | Request fails | Increase memory in CDK |
+| Persona not found | Falls back to default | Default persona (jenny-bot) used, logged |
+| Persona table unavailable | Falls back to default | Cache provides resilience, then default persona |
+| Default persona missing | Critical failure | NO_PERSONA_FOUND error, request fails |
+| Persona cache corruption | Performance degradation | Cache cleared on next setInterval, reload from DB |
 
 ## Scalability Considerations
 
@@ -313,9 +415,13 @@ Is it retryable? (timeout, 5xx, network)
 | Langchain | Direct API calls | Structured output, abstractions |
 | CDK | Terraform, CloudFormation | Type-safe, native AWS support |
 | Resend | SendGrid, AWS SES | Developer experience, webhooks |
+| In-Memory Cache for Personas | Redis/ElastiCache | Simple, low latency, no extra infrastructure cost |
+| DynamoDB Personas Table | Config files, RDS | Durable, queryable, versioned, aligns with existing stack |
+| GSI on emailAddress | Scan table, Lambda env vars | O(1) lookups, scalable routing |
+| Email-based routing | URL params, headers | Natural UX, familiar email paradigm |
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-11-24
-**Authors**: Winston (Architect), Amelia (Developer), Mary (Analyst)
+**Document Version**: 2.0
+**Last Updated**: 2025-11-25
+**Authors**: Winston (Architect), Amelia (Developer), Mary (Analyst), Paige (Tech Writer)

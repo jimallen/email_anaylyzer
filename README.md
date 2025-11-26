@@ -7,12 +7,47 @@ AI-powered email analysis system that provides copywriting feedback and marketin
 Email Analyzer is a serverless application that receives emails via webhook, analyzes them using Claude AI, and sends back detailed copywriting feedback. The system is built for marketing professionals who want instant, expert-level analysis of their email campaigns.
 
 **Key Features:**
+- **Persona-Based Analysis** - Different AI expert personas analyze emails based on recipient address
 - Real-time email analysis via Resend webhook integration
 - Multi-language support with automatic language detection
 - PDF and image attachment processing
 - Structured analysis with lifecycle context, subject line evaluation, and detailed recommendations
 - HTML-formatted email responses with markdown support
 - Fine-tuning data collection in DynamoDB for continuous improvement
+
+## Persona-Based Analysis
+
+Email Analyzer uses **AI personas** to provide specialized feedback tailored to different stakeholder perspectives. Send your email draft to different persona addresses and receive expert analysis from that persona's unique viewpoint.
+
+### Available Personas
+
+| Persona | Email Address | Expertise | Focus Areas |
+|---------|---------------|-----------|-------------|
+| **Jenny-bot** | jenny-bot@allennet.me | Brand & Marketing Expert | Brand voice consistency, emotional appeal, visual presentation, overall copywriting quality |
+| **Christoph-bot** | christoph-bot@allennet.me | Conversion & Performance Expert | Conversion optimization, CTA effectiveness, data-driven insights, A/B testing recommendations |
+| **ICP-bot** | icp-bot@allennet.me | Ideal Customer Profile Expert | Target audience alignment, messaging resonance, customer journey optimization, pain point addressing |
+
+### How It Works
+
+1. **Send your email draft** to any persona address (e.g., jenny-bot@allennet.me)
+2. **Persona resolution** - System looks up the persona by recipient email address
+3. **Specialized analysis** - Claude analyzes using that persona's unique system prompt and expertise
+4. **Branded response** - Receive feedback with persona's signature and perspective
+
+Each persona provides:
+- **Unique system prompt** reflecting their expertise and background
+- **Custom focus areas** tailored to their specialization
+- **Distinct communication style** matching their personality
+- **Personalized email signature** with their branding
+
+### Technical Implementation
+
+- **DynamoDB Persona Table** - Stores persona configurations with GSI on email address
+- **In-Memory Caching** - 1-hour TTL cache for fast persona lookups
+- **Fallback Logic** - Falls back to default persona (Jenny-bot) if recipient email not found
+- **Seed Script** - Idempotent `scripts/seed-personas.ts` to populate initial personas
+
+See [tasks/prd-persona-based-analysis.md](tasks/prd-persona-based-analysis.md) for complete PRD and design documentation.
 
 ## Quick Start
 

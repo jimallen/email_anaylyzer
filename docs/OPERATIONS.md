@@ -15,6 +15,7 @@ This document covers day-to-day operations, monitoring, incident response, and m
 | Lambda | `EmailAnalyzerStack-EmailAnalyzerFunction*` | Main processing function |
 | API Gateway | `Email Analyzer Service` | Public webhook endpoint |
 | DynamoDB | `EmailAnalysisData` | Fine-tuning data storage |
+| DynamoDB | `EmailAnalysisPersonas` ✨ NEW | AI persona configurations with GSI on emailAddress |
 | CloudWatch Logs | `/aws/lambda/EmailAnalyzerStack-*` | Application logs |
 
 ### External Services
@@ -27,10 +28,14 @@ This document covers day-to-day operations, monitoring, incident response, and m
 ### Current Configuration
 
 - **Region**: `eu-central-1` (Frankfurt)
-- **Webhook URL**: `https://v38sym2f82.execute-api.eu-central-1.amazonaws.com/prod/webhook/inbound-email`
-- **FROM Address**: `response@allennet.me`
+- **Webhook URL**: `https://9e33ejoon0.execute-api.eu-central-1.amazonaws.com/prod/webhook/inbound-email` ✨ UPDATED
+- **FROM Address**: `jenny-bot@allennet.me` ✨ UPDATED (persona-branded)
 - **Lambda Memory**: 2048 MB
 - **Lambda Timeout**: 300 seconds
+- **Personas**:
+  - `jenny-bot@allennet.me` - Brand & Marketing Expert
+  - `christoph-bot@allennet.me` - Conversion & Performance Expert
+  - `icp-bot@allennet.me` - Ideal Customer Profile Expert
 
 ## Monitoring
 
@@ -90,6 +95,30 @@ by bin(1d)
 | filter @message like /tokensUsed/
 ```
 
+**Persona usage distribution:** ✨ NEW
+```sql
+stats count(*) as requests by personaName
+| filter @message like /personaName/
+| sort requests desc
+```
+
+**Persona cache hit rate:** ✨ NEW
+```sql
+stats
+  sum(case when cacheHit = true then 1 else 0 end) as cache_hits,
+  sum(case when cacheHit = false then 1 else 0 end) as cache_misses,
+  (sum(case when cacheHit = true then 1 else 0 end) * 100.0 / count(*)) as hit_rate_percent
+| filter @message like /cacheHit/
+```
+
+**Persona resolution failures:** ✨ NEW
+```sql
+fields @timestamp, recipientEmail, @message
+| filter @message like /No persona found/
+| sort @timestamp desc
+| limit 50
+```
+
 ### Key Metrics
 
 #### Lambda Metrics (CloudWatch)
@@ -104,6 +133,9 @@ by bin(1d)
 - Token usage per analysis
 - Email send success rate
 - DynamoDB save success rate
+- ✨ **Persona cache hit rate** (target: >85%)
+- ✨ **Persona usage distribution** (requests per persona)
+- ✨ **Persona resolution failures** (should be near zero)
 
 ### Health Checks
 
@@ -214,7 +246,67 @@ aws lambda get-function-configuration \
 aws dynamodb describe-table \
   --table-name EmailAnalysisData \
   --query 'Table.TableStatus' \
-  --profile AdministratorAccess-123567778292
+  --profile jim-stage
+```
+
+#### 6. Persona Resolution Issues ✨ NEW
+
+**Symptoms:** Email analyzed by wrong persona or default persona when specific persona expected
+
+**Diagnostic Steps:**
+```bash
+# 1. Check persona table has all personas
+aws dynamodb scan \
+  --table-name EmailAnalysisPersonas \
+  --region eu-central-1 \
+  --profile jim-stage
+
+# 2. Verify persona email routing in logs
+./tail-logs.sh --since 1h | grep "Looking up persona"
+
+# 3. Check cache hit rate
+./tail-logs.sh --since 1h | grep "cacheHit"
+```
+
+**Common Causes:**
+- Persona not seeded in DynamoDB (run `scripts/seed-personas.ts`)
+- Resend inbound routing sending to wrong email address
+- Typo in recipient email address
+- Default persona (jenny-bot) missing from database
+
+**Solutions:**
+```bash
+# Re-seed personas (idempotent)
+AWS_PROFILE=jim-stage AWS_REGION=eu-central-1 npx tsx scripts/seed-personas.ts
+
+# Verify Resend routes match persona emails exactly
+# Go to resend.com/emails/inbound → Check routes
+
+# Clear Lambda cache by redeploying
+cd cdk && ./deploy.sh
+```
+
+#### 7. Low Persona Cache Hit Rate ✨ NEW
+
+**Symptoms:** Cache hit rate < 85% in CloudWatch Insights query
+
+**Expected Behavior:** Cache should hit >85% for normal usage
+
+**Diagnostic:**
+```bash
+# Check cache hit rate over last 24 hours
+# Use CloudWatch Insights "Persona cache hit rate" query
+```
+
+**Common Causes:**
+- Cold starts clearing in-memory cache
+- Low traffic (cache TTL expires before reuse)
+- Lambda scaling out to multiple instances
+
+**Solutions:**
+- Normal behavior for low-traffic environments
+- If traffic is high and cache rate still low, consider Redis/ElastiCache
+- Verify personas aren't being updated frequently (triggers cache misses)
 ```
 
 ### Log Message Reference
